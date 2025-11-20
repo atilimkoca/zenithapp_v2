@@ -34,13 +34,13 @@ git commit -m "Initial secure commit"
 Create `.env` in your project root (DO NOT COMMIT THIS):
 
 ```env
-EXPO_PUBLIC_FIREBASE_API_KEY=AIzaSyC6FKMNQ_rPfquTGlX6my6Uzl1f8DX-NAE
-EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=zenithstudio-97468.firebaseapp.com
-EXPO_PUBLIC_FIREBASE_PROJECT_ID=zenithstudio-97468
-EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=zenithstudio-97468.firebasestorage.app
-EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=179316789546
-EXPO_PUBLIC_FIREBASE_APP_ID=1:179316789546:web:2bf32cdfd1b2dce4fe8e53
-EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=G-LJJV69FS3Y
+EXPO_PUBLIC_FIREBASE_API_KEY=your-api-key-here
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=your-project-id
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+EXPO_PUBLIC_FIREBASE_APP_ID=your-app-id
+EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=your-measurement-id
 ```
 
 ### Step 3: (Recommended) Regenerate Firebase Keys
@@ -103,9 +103,9 @@ service cloud.firestore {
 ## ⚠️ What GitHub Detected
 
 GitHub's secret scanner detected these patterns in your original code:
-- Firebase API Key: `AIzaSyC6FKMNQ_rPfquTGlX6my6Uzl1f8DX-NAE`
-- Firebase Project ID: `zenithstudio-97468`
-- Firebase App ID: `1:179316789546:web:2bf32cdfd1b2dce4fe8e53`
+- Firebase API Key: `[REDACTED]`
+- Firebase Project ID: `[REDACTED]`
+- Firebase App ID: `[REDACTED]`
 
 These are now safely removed from the codebase and replaced with environment variables.
 
