@@ -17,7 +17,7 @@ export default ({ config }) => ({
   ios: {
     ...config.ios,
     bundleIdentifier: 'com.zenithstudio.app', // ⚠️ TODO: Change this to your unique Bundle Identifier (e.g. com.yourname.zenith)
-    buildNumber: '1',
+    buildNumber: '3',
     supportsTablet: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
