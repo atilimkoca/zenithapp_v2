@@ -257,95 +257,101 @@ export default function AdminPackagesScreen({ navigation }) {
   }, [packages]);
 
   const PackageCard = ({ pkg, index }) => {
-    const [primaryColor, secondaryColor] = getCardColors(pkg, index);
+    const [primaryColor] = getCardColors(pkg, index);
     const classCount = pkg?.classes ?? pkg?.sessions ?? 0;
-    const classesLabel = classCount >= 999 ? 'Sınırsız ders' : `${classCount} ders`;
-    const durationLabel = `${pkg?.duration ?? 1} ay`;
+    const classesLabel = classCount >= 999 ? 'Sınırsız' : `${classCount} Ders`;
+    const durationLabel = `${pkg?.duration ?? 1} Ay`;
     const salesCount = getSalesCount(pkg);
-    const packageTypeLabel = pkg?.packageType === 'individual' ? 'Bire Bir Ders' : 'Grup Dersi';
+    const packageTypeLabel = pkg?.packageType === 'individual' ? 'Bire Bir' : 'Grup';
+    const isActive = pkg?.isActive !== false;
 
     return (
       <View style={styles.packageCard}>
-        <LinearGradient colors={[primaryColor, secondaryColor]} style={styles.packageGradient}>
-          <View style={styles.packageHeader}>
-            <View style={styles.packageInfo}>
-              <Text style={styles.packageName}>{pkg?.name || 'Paketsiz'}</Text>
-              <Text style={styles.packagePrice}>{formatCurrency(pkg?.price)}</Text>
+        {/* Header */}
+        <View style={[styles.cardHeader, { backgroundColor: primaryColor }]}>
+          <View style={styles.cardHeaderContent}>
+            <Text style={styles.packageName}>{pkg?.name || 'İsimsiz Paket'}</Text>
+            <View style={styles.packageTypeTag}>
+              <Text style={[styles.packageTypeText, { color: primaryColor }]}>
+                {packageTypeLabel}
+              </Text>
             </View>
+          </View>
+          <Text style={styles.packagePrice}>{formatCurrency(pkg?.price)}</Text>
+        </View>
+
+        {/* Body */}
+        <View style={styles.cardBody}>
+          {pkg?.description ? (
+            <Text style={styles.packageDescription} numberOfLines={2}>
+              {pkg.description}
+            </Text>
+          ) : null}
+
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <View style={styles.statIcon}>
+                <Ionicons name="barbell" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.statLabel}>{classesLabel}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <View style={styles.statIcon}>
+                <Ionicons name="time" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.statLabel}>{durationLabel}</Text>
+            </View>
+            <View style={styles.statItem}>
+              <View style={styles.statIcon}>
+                <Ionicons name="people" size={16} color={colors.textSecondary} />
+              </View>
+              <Text style={styles.statLabel}>{salesCount} Satış</Text>
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.cardActions}>
             <TouchableOpacity
-              style={[
-                styles.statusToggle,
-                pkg?.isActive !== false ? styles.statusToggleActive : styles.statusToggleInactive,
-              ]}
+              style={[styles.statusButton, isActive ? styles.statusActive : styles.statusInactive]}
               onPress={() => handleToggleStatus(pkg)}
-              disabled={updatingId === pkg.id || deletingId === pkg.id}
+              disabled={updatingId === pkg.id}
             >
               {updatingId === pkg.id ? (
-                <ActivityIndicator size="small" color={colors.white} />
+                <ActivityIndicator size="small" color={isActive ? colors.success : colors.textSecondary} />
               ) : (
                 <>
-                  <Ionicons
-                    name={pkg?.isActive !== false ? 'pause-outline' : 'play-outline'}
-                    size={16}
-                    color={colors.white}
-                  />
-                  <Text style={styles.statusToggleText}>
-                    {pkg?.isActive !== false ? 'Pasifleştir' : 'Aktif Et'}
+                  <View style={[styles.statusDot, { backgroundColor: isActive ? colors.success : colors.textSecondary }]} />
+                  <Text style={[styles.statusText, { color: isActive ? colors.success : colors.textSecondary }]}>
+                    {isActive ? 'Aktif' : 'Pasif'}
                   </Text>
                 </>
               )}
             </TouchableOpacity>
+
+            <View style={styles.actionButtonsRight}>
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={() => openEditModal(pkg)}
+                disabled={saving}
+              >
+                <Ionicons name="create-outline" size={20} color={colors.primary} />
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.iconButton, styles.deleteButton]}
+                onPress={() => confirmDeletePackage(pkg)}
+                disabled={deletingId === pkg.id}
+              >
+                 {deletingId === pkg.id ? (
+                    <ActivityIndicator size="small" color={colors.error} />
+                 ) : (
+                    <Ionicons name="trash-outline" size={20} color={colors.error} />
+                 )}
+              </TouchableOpacity>
+            </View>
           </View>
-
-          {pkg?.description ? (
-            <Text style={styles.packageDescription}>{pkg.description}</Text>
-          ) : null}
-
-          <View style={styles.packageDetails}>
-            <View style={styles.detailRow}>
-              <Ionicons name="layers-outline" size={16} color={colors.white} />
-              <Text style={styles.detailText}>{packageTypeLabel}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Ionicons name="barbell-outline" size={16} color={colors.white} />
-              <Text style={styles.detailText}>{classesLabel}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Ionicons name="calendar-outline" size={16} color={colors.white} />
-              <Text style={styles.detailText}>{durationLabel}</Text>
-            </View>
-            <View style={styles.detailRow}>
-              <Ionicons name="people-outline" size={16} color={colors.white} />
-              <Text style={styles.detailText}>{salesCount} satış</Text>
-            </View>
-          </View>
-
-          <View style={styles.packageActions}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonSecondary]}
-              onPress={() => openEditModal(pkg)}
-              disabled={saving || updatingId === pkg.id || deletingId === pkg.id}
-            >
-              <Ionicons name="create-outline" size={16} color={colors.white} />
-              <Text style={styles.actionText}>Düzenle</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.actionButton, styles.actionButtonDanger]}
-              onPress={() => confirmDeletePackage(pkg)}
-              disabled={deletingId === pkg.id || updatingId === pkg.id}
-            >
-              {deletingId === pkg.id ? (
-                <ActivityIndicator size="small" color={colors.white} />
-              ) : (
-                <>
-                  <Ionicons name="trash-outline" size={16} color={colors.white} />
-                  <Text style={styles.actionText}>Sil</Text>
-                </>
-              )}
-            </TouchableOpacity>
-          </View>
-        </LinearGradient>
+        </View>
       </View>
     );
   };
@@ -762,111 +768,129 @@ const styles = StyleSheet.create({
   },
   packageCard: {
     marginBottom: 16,
-    borderRadius: 16,
-    overflow: 'hidden',
+    borderRadius: 20,
+    backgroundColor: colors.white,
     ...colors.shadow,
+    shadowOpacity: 0.08,
+    elevation: 3,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.lightGray,
   },
-  packageGradient: {
-    padding: 20,
-  },
-  packageHeader: {
+  cardHeader: {
+    padding: 16,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 16,
   },
-  packageInfo: {
+  cardHeaderContent: {
     flex: 1,
+    marginRight: 12,
   },
   packageName: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: colors.white,
-    marginBottom: 4,
+    marginBottom: 6,
+  },
+  packageTypeTag: {
+    backgroundColor: colors.white,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  packageTypeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   packagePrice: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     color: colors.white,
   },
-  statusToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    minWidth: 130,
-    justifyContent: 'center',
-  },
-  statusToggleActive: {
-    backgroundColor: 'rgba(239, 68, 68, 0.75)',
-  },
-  statusToggleInactive: {
-    backgroundColor: 'rgba(34, 197, 94, 0.75)',
-  },
-  statusToggleText: {
-    marginLeft: 8,
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.white,
-  },
-  packageDetails: {
-    marginBottom: 16,
-    opacity: 0.95,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  detailText: {
-    color: colors.white,
-    fontSize: 14,
-    marginLeft: 8,
-    opacity: 0.9,
+  cardBody: {
+    padding: 16,
   },
   packageDescription: {
-    color: colors.white,
     fontSize: 14,
+    color: colors.textSecondary,
     lineHeight: 20,
     marginBottom: 16,
-    opacity: 0.85,
   },
-  packageActions: {
+  statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 12,
+    marginBottom: 16,
   },
-  actionButton: {
+  statItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    borderRadius: 10,
-    flex: 1,
+  },
+  statIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: colors.lightGray,
+    alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 0,
-    minHeight: 44,
-    marginHorizontal: 4,
+    marginRight: 8,
   },
-  actionButtonSecondary: {
-    backgroundColor: 'rgba(59, 130, 246, 0.32)',
-  },
-  actionButtonDanger: {
-    backgroundColor: 'rgba(239, 68, 68, 0.32)',
-  },
-  actionText: {
-    color: colors.white,
+  statLabel: {
     fontSize: 13,
+    color: colors.textPrimary,
+    fontWeight: '500',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginBottom: 16,
+  },
+  cardActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statusButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  statusActive: {
+    borderColor: colors.success + '40',
+    backgroundColor: colors.success + '10',
+  },
+  statusInactive: {
+    borderColor: colors.textSecondary + '40',
+    backgroundColor: colors.lightGray,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  statusText: {
+    fontSize: 12,
     fontWeight: '600',
-    marginLeft: 6,
-    textAlign: 'center',
-    flexShrink: 0,
+  },
+  actionButtonsRight: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButton: {
+    backgroundColor: colors.error + '15',
   },
   noticeSection: {
     marginBottom: 40,

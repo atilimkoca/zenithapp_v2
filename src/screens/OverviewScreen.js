@@ -13,13 +13,12 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../constants/colors';
 import { useAuth } from '../context/AuthContext';
-import { useNotifications } from '../context/NotificationContext';
 import { useI18n } from '../context/I18nContext';
 import UniqueHeader from '../components/UniqueHeader';
 import { lessonCreditsService } from '../services/lessonCreditsService';
 import { userLessonService } from '../services/userLessonService';
-import { translateLessonsArray } from '../utils/lessonTranslation';
 import { formatLocalizedDate } from '../utils/dateUtils';
+import NotificationScreen from './NotificationScreen';
 
 const { width } = Dimensions.get('window');
 
@@ -42,13 +41,13 @@ const translateLessonDescription = (t, description) => {
 // Helper function to format dates with proper translation
 export default function OverviewScreen({ navigation }) {
   const { userData, user } = useAuth();
-  const { unreadCount } = useNotifications();
   const { t, locale } = useI18n();
   const [remainingCredits, setRemainingCredits] = useState(0);
   const [upcomingLessons, setUpcomingLessons] = useState([]);
   const [monthlyStats, setMonthlyStats] = useState({ totalLessons: 0, completedCount: 0 });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [notificationModalVisible, setNotificationModalVisible] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -273,7 +272,7 @@ export default function OverviewScreen({ navigation }) {
         showStats={true}
         stats={headerStats}
         onRightPress={() => {
-          navigation.navigate('Notifications');
+          setNotificationModalVisible(true);
         }}
       />
 
@@ -412,6 +411,12 @@ export default function OverviewScreen({ navigation }) {
         {/* Bottom spacing for tab bar */}
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      <NotificationScreen
+        visible={notificationModalVisible}
+        onClose={() => setNotificationModalVisible(false)}
+        modal={true}
+      />
     </View>
   );
 }
@@ -736,5 +741,3 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
-
-

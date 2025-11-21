@@ -15,7 +15,7 @@ import { colors } from '../constants/colors';
 import { useNotifications } from '../context/NotificationContext';
 import BottomSheetModal from '../components/BottomSheetModal';
 
-export default function NotificationScreen({ navigation, visible, onClose, route }) {
+export default function NotificationScreen({ navigation, visible, onClose, route, modal }) {
   const notificationContext = useNotifications();
   
   if (!notificationContext) {
@@ -37,8 +37,8 @@ export default function NotificationScreen({ navigation, visible, onClose, route
   const [refreshing, setRefreshing] = useState(false);
   
   // Determine if this is being used as a modal or navigation screen
-  const isModal = visible !== undefined;
-  const isVisible = isModal ? visible : true;
+  const isModal = modal === true || visible !== undefined || typeof onClose === 'function';
+  const isVisible = visible !== undefined ? visible : true;
 
   const handleRefresh = async () => {
     setRefreshing(true);

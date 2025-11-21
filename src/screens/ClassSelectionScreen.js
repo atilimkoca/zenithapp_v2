@@ -21,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import UniqueHeader from '../components/UniqueHeader';
 import DateCarouselPicker from '../components/DateCarouselPicker';
+import NotificationScreen from './NotificationScreen';
 
 const { width } = Dimensions.get('window');
 
@@ -146,6 +147,7 @@ export default function ClassSelectionScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateKey, setSelectedDateKey] = useState(null);
+  const [notificationModalVisible, setNotificationModalVisible] = useState(false);
   const scrollY = new Animated.Value(0);
   const hasManuallySelectedDate = useRef(false);
   
@@ -559,7 +561,8 @@ export default function ClassSelectionScreen() {
       <UniqueHeader 
         title={t('classSelection.title') || "Yoga Dersleri"} 
         subtitle={t('classSelection.subtitle') || "Katılmak istediğiniz dersi seçin"}
-        showNotification={false}
+        showNotification={true}
+        onRightPress={() => setNotificationModalVisible(true)}
       >
       </UniqueHeader>
 
@@ -605,8 +608,7 @@ export default function ClassSelectionScreen() {
             dates={availableDateKeys}
             selectedDate={selectedDateKey}
             onSelectDate={handleSelectDate}
-            allowClear
-            allLabel={t('classSelection.allDates') || 'All Dates'}
+            allowClear={false}
           />
 
           {/* Available Classes with Enhanced Design */}
@@ -991,6 +993,12 @@ export default function ClassSelectionScreen() {
           {/* Bottom spacing for navigation */}
           <View style={{ height: 120 }} />
         </Animated.ScrollView>
+
+      <NotificationScreen
+        visible={notificationModalVisible}
+        onClose={() => setNotificationModalVisible(false)}
+        modal={true}
+      />
     </View>
   );
 }

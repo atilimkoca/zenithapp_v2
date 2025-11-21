@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,8 @@ import {
   Platform,
   Linking,
   SafeAreaView,
+  PanResponder,
+  Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +28,7 @@ import { profileService } from '../services/profileService';
 import { logoutUser } from '../services/authService';
 import UniqueHeader from '../components/UniqueHeader';
 import { lessonCreditsService } from '../services/lessonCreditsService';
+import NotificationScreen from './NotificationScreen';
 
 export default function ProfileScreen({ navigation }) {
   const { userData, user, setUserData } = useAuth();
@@ -34,6 +37,7 @@ export default function ProfileScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
+  const [notificationModalVisible, setNotificationModalVisible] = useState(false);
   const [userStats, setUserStats] = useState({
     totalLessons: 0,
     completedCount: 0,
@@ -41,6 +45,71 @@ export default function ProfileScreen({ navigation }) {
     totalHours: 0
   });
   const [remainingCredits, setRemainingCredits] = useState(0);
+
+  // Animation for modal slide
+  const pan = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (modalVisible) {
+      pan.setValue(0);
+    }
+  }, [modalVisible]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return gestureState.dy > 5;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          pan.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 100) {
+          closeModal();
+        } else {
+          Animated.spring(pan, {
+            toValue: 0,
+            useNativeDriver: false,
+            friction: 5
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  useEffect(() => {
+    if (languageModalVisible) {
+      pan.setValue(0);
+    }
+  }, [languageModalVisible]);
+
+  const languagePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return gestureState.dy > 5;
+      },
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dy > 0) {
+          pan.setValue(gestureState.dy);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dy > 100) {
+          setLanguageModalVisible(false);
+        } else {
+          Animated.spring(pan, {
+            toValue: 0,
+            useNativeDriver: false,
+            friction: 5
+          }).start();
+        }
+      },
+    })
+  ).current;
 
   // Function to safely close modal
   const closeModal = () => {
@@ -554,157 +623,141 @@ export default function ProfileScreen({ navigation }) {
       <UniqueHeader
         title={t('profile.title')} 
         subtitle={t('profile.subtitle')}
-        showNotification={false}
+        showNotification={true}
+        onRightPress={() => setNotificationModalVisible(true)}
       />
 
       <ScrollView 
         style={styles.content}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
         }
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.innerContent}>
-          {/* Profile Card */}
-          <View style={styles.profileCard}>
-            <View style={styles.profileImageContainer}>
-              {renderProfileImage()}
-            </View>
-
-            <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>
-                {userData?.displayName || `${profileData.firstName} ${profileData.lastName}`.trim() || t('profile.title')}
-              </Text>
-              <Text style={styles.profileEmail}>{profileData.email}</Text>
+          {/* Modern Profile Card */}
+          <View style={styles.modernProfileCard}>
+            <View style={styles.profileHeader}>
+              <View style={styles.avatarWrapper}>
+                {renderProfileImage()}
+                <View style={styles.onlineBadge} />
+              </View>
+              <View style={styles.profileTexts}>
+                <Text style={styles.modernProfileName}>
+                  {userData?.displayName || `${profileData.firstName} ${profileData.lastName}`.trim() || t('profile.title')}
+                </Text>
+                <Text style={styles.modernProfileEmail}>{profileData.email}</Text>
+                {userData?.role === 'admin' && (
+                  <View style={styles.roleBadge}>
+                    <Text style={styles.roleText}>Admin</Text>
+                  </View>
+                )}
+              </View>
             </View>
           </View>
 
-          {/* Statistics */}
-          <View style={styles.statsSection}>
-            <Text style={styles.sectionTitle}>{t('profile.statistics')}</Text>
-            <View style={styles.statsContainer}>
-              <View style={styles.statItem}>
-                <Ionicons name="ticket-outline" size={24} color={colors.primary} />
-                <Text style={styles.statNumber}>{remainingCredits}</Text>
-                <Text style={styles.statLabel}>{t('profile.remainingLessons')}</Text>
+          {/* Modern Stats Grid */}
+          <Text style={styles.sectionHeader}>{t('profile.statistics')}</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.modernStatCard}>
+              <View style={[styles.statIconBox, { backgroundColor: colors.primary + '15' }]}>
+                <Ionicons name="ticket" size={22} color={colors.primary} />
               </View>
-              <View style={styles.statItem}>
-                <Ionicons name="checkmark-circle" size={24} color={colors.success} />
-                <Text style={styles.statNumber}>{userStats.completedCount}</Text>
-                <Text style={styles.statLabel}>{t('profile.totalLessons')}</Text>
+              <Text style={styles.modernStatValue}>{remainingCredits}</Text>
+              <Text style={styles.modernStatLabel}>{t('profile.remainingLessons')}</Text>
+            </View>
+            
+            <View style={styles.modernStatCard}>
+              <View style={[styles.statIconBox, { backgroundColor: colors.success + '15' }]}>
+                <Ionicons name="checkmark-circle" size={22} color={colors.success} />
               </View>
-              <View style={styles.statItem}>
-                <Ionicons name="trophy" size={24} color={colors.warning} />
-                <Text style={styles.statNumber}>{userStats.monthlyLessons}</Text>
-                <Text style={styles.statLabel}>{t('profile.thisMonth')}</Text>
+              <Text style={styles.modernStatValue}>{userStats.completedCount}</Text>
+              <Text style={styles.modernStatLabel}>{t('profile.totalLessons')}</Text>
+            </View>
+            
+            <View style={styles.modernStatCard}>
+              <View style={[styles.statIconBox, { backgroundColor: colors.warning + '15' }]}>
+                <Ionicons name="calendar" size={22} color={colors.warning} />
               </View>
+              <Text style={styles.modernStatValue}>{userStats.monthlyLessons}</Text>
+              <Text style={styles.modernStatLabel}>{t('profile.thisMonth')}</Text>
             </View>
           </View>
 
           {/* Admin Credit Management */}
           {userData?.role === 'admin' && (
             <View style={styles.adminSection}>
-              <Text style={styles.sectionTitle}>{t('admin.creditManagement')}</Text>
+              <Text style={styles.sectionHeader}>{t('admin.creditManagement')}</Text>
               <View style={styles.adminControls}>
                 <TouchableOpacity 
-                  style={[styles.adminButton, { backgroundColor: colors.success }]}
+                  style={[styles.adminActionButton, { backgroundColor: colors.success }]}
                   onPress={() => showCreditManagementAlert('add')}
                 >
-                  <Ionicons name="add-circle-outline" size={20} color={colors.white} />
-                  <Text style={styles.adminButtonText}>{t('admin.addCredit')}</Text>
+                  <Ionicons name="add" size={24} color={colors.white} />
+                  <Text style={styles.adminActionText}>{t('admin.addCredit')}</Text>
                 </TouchableOpacity>
                 
                 <TouchableOpacity 
-                  style={[styles.adminButton, { backgroundColor: colors.warning }]}
+                  style={[styles.adminActionButton, { backgroundColor: colors.warning }]}
                   onPress={() => showCreditManagementAlert('set')}
                 >
-                  <Ionicons name="create-outline" size={20} color={colors.white} />
-                  <Text style={styles.adminButtonText}>{t('admin.setCredit')}</Text>
+                  <Ionicons name="create-outline" size={24} color={colors.white} />
+                  <Text style={styles.adminActionText}>{t('admin.setCredit')}</Text>
                 </TouchableOpacity>
               </View>
             </View>
           )}
 
-          {/* Personal Info Button */}
-          <TouchableOpacity 
-            style={styles.modernButton}
-            onPress={() => {
-              setModalVisible(true);
-            }}
-            activeOpacity={0.7}
-          >
-            <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
-              style={styles.modernButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+          {/* Settings Section */}
+          <Text style={styles.sectionHeader}>{t('profile.settings')}</Text>
+          <View style={styles.settingsContainer}>
+            <TouchableOpacity 
+              style={styles.settingItem}
+              onPress={() => setModalVisible(true)}
+              activeOpacity={0.7}
             >
-              <View style={styles.modernButtonContent}>
-                <View style={styles.buttonIconContainer}>
-                  <Ionicons name="person-outline" size={24} color={colors.white} />
-                </View>
-                <View style={styles.buttonTextContainer}>
-                  <Text style={styles.modernButtonTitle}>{t('profile.personalInfo')}</Text>
-                  <Text style={styles.modernButtonSubtitle}>{t('profile.personalInfoDescription')}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.white} />
+              <View style={[styles.settingIconBox, { backgroundColor: colors.info + '15' }]}>
+                <Ionicons name="person-outline" size={20} color={colors.info} />
               </View>
-            </LinearGradient>
-          </TouchableOpacity>
+              <View style={styles.settingContent}>
+                <Text style={styles.settingTitle}>{t('profile.personalInfo')}</Text>
+                <Text style={styles.settingSubtitle}>{t('profile.personalInfoDescription')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textLight} />
+            </TouchableOpacity>
 
-          {/* Language Selection Button */}
-          <TouchableOpacity 
-            style={styles.modernButton}
-            onPress={() => setLanguageModalVisible(true)}
-            activeOpacity={0.7}
-          >
-            <LinearGradient
-              colors={['#4A90E2', '#357ABD']}
-              style={styles.modernButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+            <View style={styles.settingDivider} />
+
+            <TouchableOpacity 
+              style={styles.settingItem}
+              onPress={() => setLanguageModalVisible(true)}
+              activeOpacity={0.7}
             >
-              <View style={styles.modernButtonContent}>
-                <View style={styles.buttonIconContainer}>
-                  <Ionicons name="globe-outline" size={24} color={colors.white} />
-                </View>
-                <View style={styles.buttonTextContainer}>
-                  <Text style={styles.modernButtonTitle}>{t('profile.language')}</Text>
-                  <Text style={styles.modernButtonSubtitle}>
-                    {language === 'tr' ? 'Türkçe' : 'English'} - {t('profile.selectLanguage')}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.white} />
+              <View style={[styles.settingIconBox, { backgroundColor: '#8E44AD15' }]}>
+                <Ionicons name="globe-outline" size={20} color={'#8E44AD'} />
               </View>
-            </LinearGradient>
-          </TouchableOpacity>
+              <View style={styles.settingContent}>
+                <Text style={styles.settingTitle}>{t('profile.language')}</Text>
+                <Text style={styles.settingSubtitle}>
+                  {language === 'tr' ? 'Türkçe' : 'English'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textLight} />
+            </TouchableOpacity>
+          </View>
 
-          {/* Admin Panel Button - Only for admin and instructor roles */}
           {/* Logout Button */}
           <TouchableOpacity 
-            style={styles.logoutButton}
+            style={styles.modernLogoutButton}
             onPress={handleLogout}
             activeOpacity={0.7}
           >
-            <LinearGradient
-              colors={[colors.error, '#d32f2f']}
-              style={styles.logoutButtonGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <View style={styles.logoutButtonContent}>
-                <View style={styles.logoutIconContainer}>
-                  <Ionicons name="log-out-outline" size={24} color={colors.white} />
-                </View>
-                <View style={styles.logoutTextContainer}>
-                  <Text style={styles.logoutButtonTitle}>{t('auth.logoutButton')}</Text>
-                  <Text style={styles.logoutButtonSubtitle}>{t('auth.logoutDescription')}</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.white} />
-              </View>
-            </LinearGradient>
+            <Ionicons name="log-out-outline" size={20} color={colors.error} />
+            <Text style={styles.modernLogoutText}>{t('auth.logoutButton')}</Text>
           </TouchableOpacity>
+          
+          <Text style={styles.versionText}>Version 2.0.0 • Zenith App</Text>
         </View>
       </ScrollView>
 
@@ -722,9 +775,16 @@ export default function ProfileScreen({ navigation }) {
               activeOpacity={1}
               onPress={closeModal}
             />
-            <View style={styles.modalContent}>
-              {/* Modal Handle */}
-              <View style={styles.modalHandle} />
+            <Animated.View 
+              style={[styles.modalContent, { transform: [{ translateY: pan }] }]}
+            >
+              {/* Modal Handle with PanResponder */}
+              <View 
+                style={styles.modalHandleContainer}
+                {...panResponder.panHandlers}
+              >
+                <View style={styles.modalHandle} />
+              </View>
               
               {/* Modal Header */}
               <View style={styles.modalHeader}>
@@ -777,16 +837,16 @@ export default function ProfileScreen({ navigation }) {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>{t('auth.email')}</Text>
-                <View style={styles.modernInputContainer}>
+                <View style={[styles.modernInputContainer, { backgroundColor: '#f0f0f0', borderColor: '#e0e0e0' }]}>
                   <Ionicons name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
                   <TextInput
-                    style={styles.modernTextInput}
+                    style={[styles.modernTextInput, { color: colors.textSecondary }]}
                     value={profileData.email}
-                    onChangeText={(text) => setProfileData({...profileData, email: text})}
+                    editable={false}
                     placeholder={t('profile.enterEmail')}
                     placeholderTextColor={colors.textSecondary}
-                    keyboardType="email-address"
                   />
+                  <Ionicons name="lock-closed-outline" size={16} color={colors.textSecondary} style={{ marginLeft: 8, opacity: 0.5 }} />
                 </View>
               </View>
 
@@ -835,7 +895,7 @@ export default function ProfileScreen({ navigation }) {
                 </LinearGradient>
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
           </View>
         </Modal>
       )}
@@ -854,9 +914,16 @@ export default function ProfileScreen({ navigation }) {
               activeOpacity={1}
               onPress={() => setLanguageModalVisible(false)}
             />
-            <View style={styles.languageModalContent}>
+            <Animated.View 
+              style={[styles.languageModalContent, { transform: [{ translateY: pan }] }]}
+            >
               {/* Modal Handle */}
-              <View style={styles.modalHandle} />
+              <View 
+                style={styles.modalHandleContainer}
+                {...languagePanResponder.panHandlers}
+              >
+                <View style={styles.modalHandle} />
+              </View>
               
               {/* Modal Header */}
               <View style={styles.modalHeader}>
@@ -910,10 +977,16 @@ export default function ProfileScreen({ navigation }) {
                   </TouchableOpacity>
                 ))}
               </View>
-            </View>
+            </Animated.View>
           </View>
         </Modal>
       )}
+
+      <NotificationScreen
+        visible={notificationModalVisible}
+        onClose={() => setNotificationModalVisible(false)}
+        modal={true}
+      />
     </View>
   );
 }
@@ -937,190 +1010,260 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollContent: {
-    paddingBottom: 100, // Add bottom padding to avoid navigation bar
+    paddingBottom: 100,
   },
   innerContent: {
     padding: 20,
   },
-  profileCard: {
+  
+  // Modern Profile Card
+  modernProfileCard: {
     backgroundColor: colors.white,
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 20,
-    ...colors.shadow,
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 24,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: colors.primary + '10',
   },
-  profileImageContainer: {
-    marginBottom: 16,
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarWrapper: {
     position: 'relative',
+    marginRight: 16,
   },
   profileImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 3,
+    borderColor: colors.background,
   },
-  editImageBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.primary,
+  avatarContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: colors.lightGray,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 3,
+    borderColor: colors.background,
+  },
+  defaultAvatarContainer: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: colors.lightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: colors.background,
+  },
+  avatarEmoji: {
+    fontSize: 30,
+  },
+  onlineBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.success,
     borderWidth: 2,
     borderColor: colors.white,
   },
-  avatarContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.cardBackground,
-    borderWidth: 2,
-    borderColor: colors.border,
-    justifyContent: 'center',
-    alignItems: 'center',
+  profileTexts: {
+    flex: 1,
   },
-  avatarEmoji: {
-    fontSize: 32,
-  },
-  defaultAvatarContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: colors.cardBackground,
-    borderWidth: 2,
-    borderColor: colors.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileInfo: {
-    alignItems: 'center',
-  },
-  profileName: {
-    fontSize: 22,
-    fontWeight: 'bold',
+  modernProfileName: {
+    fontSize: 20,
+    fontWeight: '800',
     color: colors.textPrimary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  profileEmail: {
+  modernProfileEmail: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  roleBadge: {
+    backgroundColor: colors.primary + '15',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  roleText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+  },
+
+  // Stats Grid
+  sectionHeader: {
     fontSize: 14,
+    fontWeight: '700',
     color: colors.textSecondary,
     marginBottom: 12,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    marginBottom: 16,
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
   },
-  statsSection: {
+  modernStatCard: {
+    flex: 1,
     backgroundColor: colors.white,
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    ...colors.shadow,
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  statItem: {
+    padding: 12,
+    marginHorizontal: 4,
     alignItems: 'center',
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  statIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modernStatValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  modernStatLabel: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+
+  // Admin Section
+  adminSection: {
+    marginBottom: 24,
+  },
+  adminControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  adminActionButton: {
+    flex: 0.48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  adminActionText: {
+    color: colors.white,
+    fontSize: 13,
+    fontWeight: '700',
+    marginLeft: 6,
+  },
+
+  // Settings List
+  settingsContainer: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: 8,
+    marginBottom: 24,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  settingIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  settingContent: {
     flex: 1,
   },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
+  settingTitle: {
+    fontSize: 15,
+    fontWeight: '600',
     color: colors.textPrimary,
-    marginTop: 8,
+    marginBottom: 2,
   },
-  statLabel: {
+  settingSubtitle: {
     fontSize: 12,
     color: colors.textSecondary,
-    marginTop: 4,
   },
-  // Modern Button Styles
-  modernButton: {
-    borderRadius: 16,
-    marginBottom: 20,
-    overflow: 'hidden',
-    ...colors.shadow,
+  settingDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginLeft: 64,
   },
-  modernButtonGradient: {
-    padding: 20,
-  },
-  modernButtonContent: {
+
+  // Logout Button
+  modernLogoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  buttonIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  buttonTextContainer: {
-    flex: 1,
-  },
-  modernButtonTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.white,
-    marginBottom: 4,
-  },
-  modernButtonSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-  },
-  // Logout Button Styles
-  logoutButton: {
+    backgroundColor: colors.error + '10',
+    paddingVertical: 16,
     borderRadius: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: colors.error + '20',
+  },
+  modernLogoutText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.error,
+    marginLeft: 8,
+  },
+  versionText: {
+    textAlign: 'center',
+    fontSize: 12,
+    color: colors.textLight,
     marginBottom: 20,
-    overflow: 'hidden',
-    ...colors.shadow,
   },
-  logoutButtonGradient: {
-    padding: 20,
-  },
-  logoutButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  logoutIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  logoutTextContainer: {
-    flex: 1,
-  },
-  logoutButtonTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.white,
-    marginBottom: 4,
-  },
-  logoutButtonSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-  },
-  // Modal Styles
+
+  // Modal Styles (Kept mostly same but refined)
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'transparent', // Make overlay transparent
+    backgroundColor: 'transparent', // Changed from rgba(0,0,0,0.5) to transparent as requested
   },
   modalBackdrop: {
     position: 'absolute',
@@ -1128,20 +1271,34 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'transparent', // Remove gray background
+    backgroundColor: 'rgba(0,0,0,0.2)', // Subtle static dimming if needed, but user might want fully transparent. 
+    // If the user says "gray background is rising", it's because this was on the parent or sliding view.
+    // If I put it here, it will still slide if it's inside the Modal.
+    // To fix the "rising" background with standard Modal, we usually make the background transparent.
+    backgroundColor: 'transparent', 
   },
   modalContent: {
     backgroundColor: colors.white,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingTop: 8,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 24,
     paddingHorizontal: 24,
     maxHeight: height * 0.85,
     minHeight: height * 0.65,
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: -4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 20,
+  },
+  modalHandleContainer: {
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginBottom: 10,
   },
   modalHandle: {
     width: 40,
@@ -1149,14 +1306,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     borderRadius: 2,
     alignSelf: 'center',
-    marginTop: 8,
-    marginBottom: 20,
+    // marginBottom: 24, // Removed margin from here as it's handled by container
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 32,
   },
   modalHeaderLeft: {
     flexDirection: 'row',
@@ -1167,15 +1323,16 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.primary + '15',
+    backgroundColor: colors.lightGray,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '800',
     color: colors.textPrimary,
+    letterSpacing: -0.5,
   },
   modalSubtitle: {
     fontSize: 14,
@@ -1183,10 +1340,10 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.background,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.lightGray,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1194,59 +1351,69 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 14,
+    fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: 8,
+    marginBottom: 10,
+    marginLeft: 4,
   },
   modernInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 6,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: '#F0F0F0',
   },
   inputIcon: {
-    marginRight: 12,
+    marginRight: 16,
+    opacity: 0.5,
   },
   modernTextInput: {
     flex: 1,
     fontSize: 16,
     color: colors.textPrimary,
-    paddingVertical: 12,
+    paddingVertical: 16,
+    fontWeight: '500',
   },
   modalFooter: {
     flexDirection: 'row',
-    paddingTop: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-    gap: 12,
+    paddingTop: 24,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    gap: 16,
   },
   cancelButton: {
     flex: 1,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: colors.background,
+    padding: 18,
+    borderRadius: 20,
+    backgroundColor: '#F8F9FA',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
   },
   cancelButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textSecondary,
   },
   modernSaveButton: {
     flex: 2,
-    borderRadius: 12,
+    borderRadius: 20,
     overflow: 'hidden',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   saveButtonGradient: {
-    padding: 16,
+    padding: 18,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -1254,9 +1421,70 @@ const styles = StyleSheet.create({
   modernSaveButtonText: {
     color: colors.white,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     marginLeft: 8,
   },
+  
+  // Language Modal Styles
+  languageModalContent: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingTop: 24,
+    paddingHorizontal: 24,
+    maxHeight: height * 0.8, // Increased from 0.5
+    minHeight: height * 0.5, // Increased from 0.3
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: -4,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 20,
+  },
+  languageOptions: {
+    flex: 1,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+  },
+  languageOption: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  selectedLanguageOption: {
+    backgroundColor: colors.primary + '10',
+    borderColor: colors.primary,
+  },
+  languageOptionContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  languageInfo: {
+    flex: 1,
+  },
+  languageName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  selectedLanguageName: {
+    color: colors.primary,
+  },
+  languageCode: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  selectedLanguageCode: {
+    color: colors.primary,
+  },
+  
   // Simple header styles
   headerContainer: {
     backgroundColor: colors.primary,
@@ -1274,98 +1502,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: '400',
-  },
-  
-  // Admin styles
-  adminSection: {
-    backgroundColor: colors.white,
-    borderRadius: 20,
-    padding: 20,
-    marginHorizontal: 24,
-    marginBottom: 20,
-    shadowColor: colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  adminControls: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 15,
-  },
-  adminButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 25,
-    flex: 0.45,
-    justifyContent: 'center',
-  },
-  adminButtonText: {
-    color: colors.white,
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  
-  // Language Modal Styles
-  languageModalContent: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingTop: 8,
-    paddingHorizontal: 24,
-    maxHeight: height * 0.5,
-    minHeight: height * 0.3,
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
-  languageOptions: {
-    flex: 1,
-    paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-  },
-  languageOption: {
-    backgroundColor: colors.background,
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  selectedLanguageOption: {
-    backgroundColor: colors.primary + '15',
-    borderColor: colors.primary,
-  },
-  languageOptionContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  languageInfo: {
-    flex: 1,
-  },
-  languageName: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  selectedLanguageName: {
-    color: colors.primary,
-  },
-  languageCode: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  selectedLanguageCode: {
-    color: colors.primary,
   },
 });

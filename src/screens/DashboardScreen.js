@@ -15,6 +15,7 @@ import { colors } from '../constants/colors';
 import { useAuth } from '../context/AuthContext';
 import { profileService } from '../services/profileService';
 import UniqueHeader from '../components/UniqueHeader';
+import NotificationScreen from './NotificationScreen';
 
 const { width } = Dimensions.get('window');
 
@@ -22,6 +23,7 @@ export default function DashboardScreen() {
   const { user, userData } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [notificationModalVisible, setNotificationModalVisible] = useState(false);
   const [dashboardData, setDashboardData] = useState({
     stats: {
       totalLessons: 0,
@@ -110,7 +112,7 @@ export default function DashboardScreen() {
         title="Genel Bakış" 
         subtitle="Yoga yolculuğunuzdaki ilerleyişiniz"
         rightIcon="notifications-outline"
-        onRightPress={() => {}}
+        onRightPress={() => setNotificationModalVisible(true)}
         showStats={true}
         stats={headerStats}
       />
@@ -252,6 +254,12 @@ export default function DashboardScreen() {
           </View>
         </View>
       </ScrollView>
+
+      <NotificationScreen
+        visible={notificationModalVisible}
+        onClose={() => setNotificationModalVisible(false)}
+        modal={true}
+      />
     </View>
   );
 }

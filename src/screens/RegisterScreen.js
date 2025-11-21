@@ -180,7 +180,7 @@ export default function RegisterScreen({ navigation }) {
       {/* Background Design */}
       <View style={styles.backgroundContainer}>
         <LinearGradient
-          colors={[colors.primaryDark, colors.primary]}
+          colors={[colors.primary, colors.primaryLight]}
           style={styles.topGradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: height * 0.35,
+    height: height * 0.45,
     overflow: 'hidden',
   },
   topGradient: {
@@ -449,14 +449,13 @@ const styles = StyleSheet.create({
   },
   curveContainer: {
     position: 'absolute',
-    bottom: -50,
-    left: 0,
-    right: 0,
-    height: 100,
+    bottom: -60,
+    left: -width * 0.25,
+    width: width * 1.5,
+    height: 120,
     backgroundColor: colors.background,
-    borderTopLeftRadius: 50,
-    borderTopRightRadius: 50,
-    transform: [{ scaleX: 1.5 }],
+    borderTopLeftRadius: width * 0.75,
+    borderTopRightRadius: width * 0.75,
   },
   safeArea: {
     flex: 1,
@@ -470,7 +469,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   headerSection: {
-    marginTop: 20,
+    marginTop: height * 0.05,
     marginBottom: 24,
   },
   backButton: {
@@ -512,7 +511,7 @@ const styles = StyleSheet.create({
   },
   formCard: {
     // Styles handled by GlassContainer default + overrides
-    padding: 24,
+    padding: 20,
   },
   nameRow: {
     flexDirection: 'row',

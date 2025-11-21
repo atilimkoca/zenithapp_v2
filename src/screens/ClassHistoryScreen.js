@@ -462,108 +462,72 @@ export default function ClassHistoryScreen() {
         }
       >
 
-          {/* Enhanced Stats Overview */}
-          <View style={styles.statsContainer}>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>
-                {loading ? '...' : (stats.upcomingCount ?? 0)}
-              </Text>
-              <Text style={styles.statLabel}>{t('classes.upcoming')}</Text>
-              <Ionicons name="calendar" size={24} color={colors.primary} />
+          {/* Modern Stats Overview */}
+          <View style={styles.statsOverviewContainer}>
+            <View style={styles.mainStatCard}>
+              <View style={styles.mainStatHeader}>
+                <View>
+                  <Text style={styles.mainStatLabel}>{t('classes.upcoming')}</Text>
+                  <Text style={styles.mainStatValue}>{loading ? '...' : (stats.upcomingCount ?? 0)}</Text>
+                </View>
+                <View style={[styles.iconContainer, { backgroundColor: colors.primary + '20' }]}>
+                  <Ionicons name="calendar" size={24} color={colors.primary} />
+                </View>
+              </View>
             </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>
-                {loading ? '...' : (stats.completedCount ?? 0)}
-              </Text>
-              <Text style={styles.statLabel}>{t('classes.completed')}</Text>
-              <Ionicons name="checkmark-circle" size={24} color={colors.success} />
-            </View>
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>
-                {loading ? '...' : (stats.totalLessons ?? 0)}
-              </Text>
-              <Text style={styles.statLabel}>{t('profile.totalLessons')}</Text>
-              <Ionicons name="trophy" size={24} color={colors.warning} />
+
+            <View style={styles.secondaryStatsRow}>
+              <View style={styles.secondaryStatCard}>
+                <Ionicons name="checkmark-circle-outline" size={20} color={colors.success} style={styles.statIcon} />
+                <Text style={styles.secondaryStatValue}>{loading ? '...' : (stats.completedCount ?? 0)}</Text>
+                <Text style={styles.secondaryStatLabel}>{t('classes.completed')}</Text>
+              </View>
+              <View style={styles.secondaryStatCard}>
+                <Ionicons name="trophy-outline" size={20} color={colors.warning} style={styles.statIcon} />
+                <Text style={styles.secondaryStatValue}>{loading ? '...' : (stats.totalLessons ?? 0)}</Text>
+                <Text style={styles.secondaryStatLabel}>{t('profile.totalLessons')}</Text>
+              </View>
+              <View style={styles.secondaryStatCard}>
+                <Ionicons name="trending-up-outline" size={20} color={colors.info} style={styles.statIcon} />
+                <Text style={styles.secondaryStatValue}>{loading ? '...' : `%${stats.completionRate ?? 0}`}</Text>
+                <Text style={styles.secondaryStatLabel}>{t('profile.completionRate')}</Text>
+              </View>
             </View>
           </View>
 
-          {/* Additional Stats Row */}
-          {!loading && (stats.totalLessons ?? 0) > 0 && (
-            <View style={styles.additionalStats}>
-              <View style={styles.additionalStatCard}>
-                <View style={styles.statRow}>
-                  <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
-                  <Text style={styles.additionalStatLabel}>{t('profile.thisMonth')}</Text>
-                </View>
-                <Text style={styles.additionalStatNumber}>
-                  {loading ? '...' : `${stats.thisMonthCount ?? 0} ${t('classes.lessons')}`}
-                </Text>
-              </View>
-              
-              <View style={styles.additionalStatCard}>
-                <View style={styles.statRow}>
-                  <Ionicons name="trending-up-outline" size={16} color={colors.textSecondary} />
-                  <Text style={styles.additionalStatLabel}>{t('profile.completionRate')}</Text>
-                </View>
-                <Text style={styles.additionalStatNumber}>
-                  {loading ? '...' : `%${stats.completionRate ?? 0}`}
-                </Text>
-              </View>
-
-              <View style={styles.additionalStatCard}>
-                <View style={styles.statRow}>
-                  <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
-                  <Text style={styles.additionalStatLabel}>{t('profile.thisWeek')}</Text>
-                </View>
-                <Text style={styles.additionalStatNumber}>
-                  {loading ? '...' : `${stats.thisWeekCount ?? 0} ${t('classes.lessons')}`}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* Tabs */}
-          <View style={styles.tabsContainer}>
-            {tabs.map((tab) => (
-              <TouchableOpacity
-                key={tab.id}
-                style={[
-                  styles.tab,
-                  selectedTab === tab.id && styles.activeTab
-                ]}
-                onPress={() => setSelectedTab(tab.id)}
-              >
-                <Text 
-                  style={[
-                    styles.tabText,
-                    selectedTab === tab.id && styles.activeTabText
-                  ]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit={true}
-                  minimumFontScale={0.8}
+          {/* Modern Segmented Tabs */}
+          <View style={styles.segmentedControlContainer}>
+            {tabs.map((tab) => {
+              const isActive = selectedTab === tab.id;
+              return (
+                <TouchableOpacity
+                  key={tab.id}
+                  style={[styles.segment, isActive && styles.activeSegment]}
+                  onPress={() => setSelectedTab(tab.id)}
+                  activeOpacity={0.7}
                 >
-                  {tab.name}
-                </Text>
-                <View style={[
-                  styles.tabBadge,
-                  selectedTab === tab.id && styles.activeTabBadge
-                ]}>
-                  <Text style={[
-                    styles.tabBadgeText,
-                    selectedTab === tab.id && styles.activeTabBadgeText
-                  ]}>
-                    {tab.count}
+                  <Text style={[styles.segmentText, isActive && styles.activeSegmentText]}>
+                    {tab.name}
                   </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+                  {tab.count > 0 && (
+                    <View style={[styles.segmentBadge, isActive && styles.activeSegmentBadge]}>
+                      <Text style={[styles.segmentBadgeText, isActive && styles.activeSegmentBadgeText]}>
+                        {tab.count}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          {/* Classes List */}
-          <View style={styles.section}>
+          {/* Modern Classes List */}
+          <View style={styles.listSection}>
             {getCurrentClasses().length === 0 ? (
               <View style={styles.emptyState}>
-                <Ionicons name="calendar-outline" size={64} color={colors.gray} />
+                <View style={styles.emptyStateIconContainer}>
+                  <Ionicons name="calendar-clear-outline" size={48} color={colors.primary} />
+                </View>
                 <Text style={styles.emptyStateTitle}>{t('classes.noLessons')}</Text>
                 <Text style={styles.emptyStateText}>
                   {selectedTab === 'completed' && t('classes.noCompleted')}
@@ -572,112 +536,92 @@ export default function ClassHistoryScreen() {
                 </Text>
               </View>
             ) : (
-              getCurrentClasses().map((lesson) => (
-                <View key={lesson.id} style={styles.classCard}>
-                  <View style={styles.classHeader}>
-                    <View style={styles.classMainInfo}>
-                      <View style={styles.classTitleRow}>
+              getCurrentClasses().map((lesson) => {
+                // Parse date for the date badge
+                let day = '', month = '';
+                try {
+                  let dateObj;
+                  if (lesson.scheduledDate.includes('T')) {
+                    dateObj = new Date(lesson.scheduledDate.split('T')[0]);
+                  } else {
+                    dateObj = new Date(lesson.scheduledDate);
+                  }
+                  day = dateObj.getDate();
+                  month = dateObj.toLocaleString(currentLanguage === 'tr' ? 'tr-TR' : 'en-US', { month: 'short' }).toUpperCase();
+                } catch (e) {
+                  day = '--';
+                  month = '---';
+                }
+
+                return (
+                  <View key={lesson.id} style={styles.modernClassCard}>
+                    <View style={styles.cardLeftStrip}>
+                      <View style={styles.dateBadge}>
+                        <Text style={styles.dateBadgeDay}>{day}</Text>
+                        <Text style={styles.dateBadgeMonth}>{month}</Text>
+                      </View>
+                      <View style={styles.verticalLine} />
+                      <View style={[styles.categoryDot, { backgroundColor: getCategoryColor(lesson.typeInfo) }]} />
+                    </View>
+                    
+                    <View style={styles.cardContent}>
+                      <View style={styles.cardHeader}>
+                        <Text style={styles.modernClassName} numberOfLines={1}>{lesson.title}</Text>
                         <View style={[
-                          styles.categoryIcon,
-                          { backgroundColor: getCategoryColor(lesson.typeInfo) + '15' }
+                          styles.modernStatusBadge,
+                          { backgroundColor: getStatusColor(lesson.userStatus) + '15' }
                         ]}>
-                          <Ionicons
-                            name={getCategoryIcon(lesson.typeInfo)}
-                            size={20}
-                            color={getCategoryColor(lesson.typeInfo)}
-                          />
-                        </View>
-                        <View style={styles.classTextInfo}>
-                          <Text style={styles.className}>{lesson.title}</Text>
-                          <Text style={styles.instructorName}>
-                            🧘‍♀️ {lesson.trainerName || lesson.instructor || t('ui.noInstructor')}
+                          <Text style={[
+                            styles.modernStatusText,
+                            { color: getStatusColor(lesson.userStatus) }
+                          ]}>
+                            {getStatusText(lesson.userStatus)}
                           </Text>
                         </View>
                       </View>
-                    </View>
-                    
-                    <View style={[
-                      styles.statusBadge,
-                      { backgroundColor: getStatusColor(lesson.userStatus) + '15' }
-                    ]}>
-                      <Text style={[
-                        styles.statusText,
-                        { color: getStatusColor(lesson.userStatus) }
-                      ]}>
-                        {getStatusText(lesson.userStatus)}
-                      </Text>
-                    </View>
-                  </View>
 
-                  <View style={styles.classDetails}>
-                    <View style={styles.detailRow}>
-                      <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
-                      <Text style={styles.detailText}>{lesson.formattedDate}</Text>
-                    </View>
-                    <View style={styles.detailRow}>
-                      <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
-                      <Text style={styles.detailText}>{lesson.formattedTime}</Text>
-                    </View>
-                    {lesson.duration && (
-                      <View style={styles.detailRow}>
-                        <Ionicons name="hourglass-outline" size={16} color={colors.textSecondary} />
-                        <Text style={styles.detailText}>{lesson.duration} {t('classes.duration')}</Text>
+                      <View style={styles.cardInfoRow}>
+                        <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                        <Text style={styles.cardInfoText}>{lesson.formattedTime} • {lesson.duration} {t('classes.duration')}</Text>
                       </View>
-                    )}
-                    <View style={styles.detailRow}>
-                      <Ionicons name="people-outline" size={16} color={colors.textSecondary} />
-                      <Text style={styles.detailText}>
-                        {lesson.currentParticipants}/{lesson.maxParticipants} {t('classes.participants')}
-                      </Text>
-                    </View>
-                    {lesson.reason && (
-                      <View style={styles.detailRow}>
-                        <Ionicons name="information-circle-outline" size={16} color={colors.error} />
-                        <Text style={[styles.detailText, { color: colors.error }]}>{translateCancelReason(t, lesson.reason)}</Text>
-                      </View>
-                    )}
-                  </View>
 
-                  {/* Action Area */}
-                  <View style={styles.classFooter}>
-                    {/* Lesson Type Badge */}
-                    <View style={styles.leftFooter}>
-                      <View style={[
-                        styles.typeBadge, 
-                        { backgroundColor: getCategoryColor(lesson.typeInfo) + '15' }
-                      ]}>
-                        <Text style={[
-                          styles.typeBadgeText, 
-                          { color: getCategoryColor(lesson.typeInfo) }
-                        ]}>
-                          {lesson.typeInfo?.category || lesson.type || t('classes.general')}
-                        </Text>
+                      <View style={styles.cardInfoRow}>
+                        <Ionicons name="person-outline" size={14} color={colors.textSecondary} />
+                        <Text style={styles.cardInfoText}>{lesson.trainerName || lesson.instructor || t('ui.noInstructor')}</Text>
                       </View>
+
+                      {lesson.reason && (
+                        <View style={styles.reasonContainer}>
+                          <Ionicons name="alert-circle-outline" size={14} color={colors.error} />
+                          <Text style={styles.reasonText} numberOfLines={1}>
+                            {translateCancelReason(t, lesson.reason)}
+                          </Text>
+                        </View>
+                      )}
+
+                      {lesson.userStatus === 'upcoming' && (
+                        <View style={styles.cardActions}>
+                          <TouchableOpacity
+                            style={[
+                              styles.modernCancelButton,
+                              !canCancelLesson(lesson) && styles.modernCancelButtonDisabled
+                            ]}
+                            onPress={() => handleCancelClass(lesson)}
+                            disabled={!canCancelLesson(lesson)}
+                          >
+                            <Text style={[
+                              styles.modernCancelButtonText,
+                              !canCancelLesson(lesson) && styles.modernCancelButtonDisabledText
+                            ]}>
+                              {canCancelLesson(lesson) ? t('classes.cancel') : t('classes.cannotCancel')}
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
                     </View>
-                    
-                    {lesson.userStatus === 'upcoming' && (
-                      <TouchableOpacity
-                        style={[
-                          styles.cancelButton,
-                          !canCancelLesson(lesson) && styles.cancelButtonDisabled
-                        ]}
-                        onPress={() => handleCancelClass(lesson)}
-                        disabled={!canCancelLesson(lesson)}
-                      >
-                        <Ionicons name="close-circle-outline" size={18} color={
-                          canCancelLesson(lesson) ? colors.error : colors.gray
-                        } />
-                        <Text style={[
-                          styles.cancelButtonText,
-                          !canCancelLesson(lesson) && styles.cancelButtonDisabledText
-                        ]}>
-                          {canCancelLesson(lesson) ? t('classes.cancel') : t('classes.cannotCancel')}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
                   </View>
-                </View>
-              ))
+                );
+              })
             )}
           </View>
 
@@ -695,10 +639,9 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    backgroundColor: colors.background,
   },
-  gradient: {
-    flex: 1,
+  scrollContent: {
+    paddingBottom: 40,
   },
   loadingContainer: {
     flex: 1,
@@ -711,151 +654,159 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontWeight: '500',
   },
-  statsContainer: {
-    flexDirection: 'row',
+  
+  // Modern Stats Styles
+  statsOverviewContainer: {
     paddingHorizontal: 20,
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  statCard: {
+  mainStatCard: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 12,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+    borderWidth: 1,
+    borderColor: colors.primary + '10',
+  },
+  mainStatHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  mainStatLabel: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  mainStatValue: {
+    fontSize: 36,
+    fontWeight: '800',
+    color: colors.primary,
+    letterSpacing: -1,
+  },
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  secondaryStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  secondaryStatCard: {
     flex: 1,
     backgroundColor: colors.white,
     borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    marginHorizontal: 4,
-    shadowColor: colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  statNumber: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  additionalStats: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  additionalStatCard: {
-    flex: 1,
-    backgroundColor: colors.white,
-    borderRadius: 12,
     padding: 12,
-    marginHorizontal: 2,
-    shadowColor: colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  statRow: {
-    flexDirection: 'row',
+    marginHorizontal: 4,
     alignItems: 'center',
-    marginBottom: 6,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  additionalStatLabel: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginLeft: 4,
-    fontWeight: '500',
+  statIcon: {
+    marginBottom: 8,
   },
-  additionalStatNumber: {
-    fontSize: 13,
+  secondaryStatValue: {
+    fontSize: 16,
     fontWeight: '700',
     color: colors.textPrimary,
+    marginBottom: 2,
+  },
+  secondaryStatLabel: {
+    fontSize: 10,
+    color: colors.textSecondary,
     textAlign: 'center',
+    fontWeight: '500',
   },
-  tabsContainer: {
+
+  // Modern Tabs Styles
+  segmentedControlContainer: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 20,
+    backgroundColor: colors.lightGray,
+    borderRadius: 16,
+    padding: 4,
+    marginHorizontal: 20,
+    marginBottom: 24,
   },
-  tab: {
+  segment: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.white,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    marginHorizontal: 4,
+    paddingVertical: 10,
     borderRadius: 12,
+  },
+  activeSegment: {
+    backgroundColor: colors.white,
     shadowColor: colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
-    minHeight: 44,
   },
-  activeTab: {
-    backgroundColor: colors.primary,
-  },
-  tabText: {
+  segmentText: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.textPrimary,
-    marginRight: 6,
-    flex: 1,
-    textAlign: 'center',
-    numberOfLines: 1,
-    adjustsFontSizeToFit: true,
-    minimumFontScale: 0.8,
+    color: colors.textSecondary,
   },
-  activeTabText: {
-    color: colors.white,
+  activeSegmentText: {
+    color: colors.primary,
   },
-  tabBadge: {
-    backgroundColor: colors.lightGray,
+  segmentBadge: {
+    backgroundColor: colors.gray,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 10,
-    minWidth: 18,
-    flexShrink: 0,
+    borderRadius: 8,
+    marginLeft: 6,
   },
-  activeTabBadge: {
-    backgroundColor: colors.white + '30',
+  activeSegmentBadge: {
+    backgroundColor: colors.primary + '20',
   },
-  tabBadgeText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    textAlign: 'center',
+  segmentBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textSecondary,
   },
-  activeTabBadgeText: {
-    color: colors.white,
+  activeSegmentBadgeText: {
+    color: colors.primary,
   },
-  section: {
+
+  // Modern List Styles
+  listSection: {
     paddingHorizontal: 20,
-    marginBottom: 24,
   },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
   },
+  emptyStateIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.primary + '10',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   emptyStateTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.textPrimary,
-    marginTop: 16,
     marginBottom: 8,
   },
   emptyStateText: {
@@ -863,127 +814,132 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
-    paddingHorizontal: 20,
+    paddingHorizontal: 40,
   },
-  classCard: {
+  
+  // Modern Card Styles
+  modernClassCard: {
+    flexDirection: 'row',
     backgroundColor: colors.white,
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 20,
     marginBottom: 16,
     shadowColor: colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
     shadowRadius: 12,
-    elevation: 6,
+    elevation: 4,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  classHeader: {
+  cardLeftStrip: {
+    width: 70,
+    backgroundColor: colors.lightGray + '50',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+  },
+  dateBadge: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  dateBadgeDay: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  dateBadgeMonth: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  verticalLine: {
+    width: 1,
+    flex: 1,
+    backgroundColor: colors.border,
+    marginVertical: 8,
+  },
+  categoryDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  cardContent: {
+    flex: 1,
+    padding: 16,
+  },
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 16,
+    marginBottom: 12,
   },
-  classMainInfo: {
-    flex: 1,
-  },
-  classTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  categoryIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  classTextInfo: {
-    flex: 1,
-  },
-  className: {
+  modernClassName: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: 4,
+    flex: 1,
+    marginRight: 8,
   },
-  instructorName: {
-    fontSize: 14,
+  modernStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  modernStatusText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  cardInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  cardInfoText: {
+    fontSize: 13,
     color: colors.textSecondary,
+    marginLeft: 6,
+    fontWeight: '500',
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+  reasonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.error + '10',
+    padding: 8,
+    borderRadius: 8,
+    marginTop: 8,
   },
-  statusText: {
+  reasonText: {
     fontSize: 12,
-    fontWeight: '600',
-  },
-  classDetails: {
-    marginBottom: 16,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  detailText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginLeft: 8,
-  },
-  classFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  leftFooter: {
+    color: colors.error,
+    marginLeft: 6,
     flex: 1,
   },
-  typeBadge: {
+  cardActions: {
+    marginTop: 12,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+  },
+  modernCancelButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
-    alignSelf: 'flex-start',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.error + '30',
   },
-  typeBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  cancelButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: colors.error + '15',
-    borderRadius: 12,
-  },
-  cancelButtonDisabled: {
+  modernCancelButtonDisabled: {
+    borderColor: colors.gray,
     backgroundColor: colors.gray + '10',
-    opacity: 0.6,
   },
-  cancelButtonText: {
-    color: colors.error,
-    fontSize: 14,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  cancelButtonDisabledText: {
-    color: colors.gray,
-  },
-  noCancelInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  noCancelText: {
-    color: colors.textSecondary,
+  modernCancelButtonText: {
     fontSize: 12,
-    marginLeft: 4,
-    fontStyle: 'italic',
+    fontWeight: '600',
+    color: colors.error,
+  },
+  modernCancelButtonDisabledText: {
+    color: colors.textLight,
   },
 });

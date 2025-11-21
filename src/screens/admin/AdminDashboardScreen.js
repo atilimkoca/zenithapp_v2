@@ -205,39 +205,34 @@ export default function AdminDashboardScreen({ navigation }) {
 
   const StatCard = ({ icon, value, label, color, subtitle }) => (
     <View style={styles.statCard}>
-      <LinearGradient
-        colors={[color, color + 'CC']}
-        style={styles.statGradient}
-      >
-        <View style={styles.statContent}>
-          <Ionicons name={icon} size={26} color={colors.white} />
-          <View style={styles.statText}>
-            <Text style={styles.statValue}>{value}</Text>
-            <Text style={styles.statLabel} numberOfLines={1} ellipsizeMode="tail">{label}</Text>
-            {subtitle && <Text style={styles.statSubtitle} numberOfLines={1}>{subtitle}</Text>}
-          </View>
-        </View>
-      </LinearGradient>
+      <View style={[styles.statIconContainer, { backgroundColor: color + '15' }]}>
+        <Ionicons name={icon} size={24} color={color} />
+      </View>
+      <View style={styles.statContent}>
+        <Text style={[styles.statValue, { color: color }]}>{value}</Text>
+        <Text style={styles.statLabel}>{label}</Text>
+        {subtitle && <Text style={styles.statSubtitle}>{subtitle}</Text>}
+      </View>
     </View>
   );
 
   const ActionCard = ({ title, description, icon, color, onPress, badge }) => (
-    <TouchableOpacity style={styles.actionCard} onPress={onPress}>
-      <LinearGradient
-        colors={[color, color + 'E6']}
-        style={styles.actionGradient}
-      >
-        <View style={styles.actionHeader}>
-          <Ionicons name={icon} size={24} color={colors.white} />
-          {badge && (
-            <View style={styles.actionBadge}>
-              <Text style={styles.badgeText}>{badge}</Text>
-            </View>
-          )}
-        </View>
-        <Text style={styles.actionTitle} numberOfLines={1} ellipsizeMode="tail">{title}</Text>
-        <Text style={styles.actionDescription} numberOfLines={2} ellipsizeMode="tail">{description}</Text>
-      </LinearGradient>
+    <TouchableOpacity style={styles.actionCard} onPress={onPress} activeOpacity={0.8}>
+      <View style={[styles.actionIconContainer, { backgroundColor: color + '15' }]}>
+        <Ionicons name={icon} size={28} color={color} />
+        {badge && (
+          <View style={styles.actionBadge}>
+            <Text style={styles.badgeText}>{badge}</Text>
+          </View>
+        )}
+      </View>
+      <View style={styles.actionContent}>
+        <Text style={styles.actionTitle}>{title}</Text>
+        <Text style={styles.actionDescription} numberOfLines={2}>{description}</Text>
+      </View>
+      <View style={styles.actionArrow}>
+        <Ionicons name="chevron-forward" size={20} color={colors.gray} />
+      </View>
     </TouchableOpacity>
   );
 
@@ -334,7 +329,7 @@ export default function AdminDashboardScreen({ navigation }) {
               <ActionCard
                 title="Üye Yönetimi"
                 description="Kullanıcıları onayla, reddet veya düzenle"
-                icon="people-outline"
+                icon="people"
                 color={colors.primary}
                 onPress={() => navigateToSection('AdminUserManagement')}
                 badge={stats.pendingUsers > 0 ? stats.pendingUsers : null}
@@ -342,24 +337,24 @@ export default function AdminDashboardScreen({ navigation }) {
 
               <ActionCard
                 title="Ders Yönetimi"
-                description="Dersleri görüntüle ve yönet"
-                icon="calendar-outline"
+                description="Ders programını ve sınıfları yönet"
+                icon="calendar"
                 color={colors.success}
                 onPress={() => navigateToSection('AdminLessonManagement')}
               />
 
               <ActionCard
-                title="Bildirimler"
-                description="Toplu bildirim gönder"
-                icon="notifications-outline"
+                title="Bildirim Merkezi"
+                description="Toplu bildirim ve duyuru gönder"
+                icon="notifications"
                 color="#FF6B6B"
                 onPress={openNotificationModal}
               />
 
               <ActionCard
                 title="Çıkış Yap"
-                description="Hesaptan güvenle çık"
-                icon="log-out-outline"
+                description="Yönetici hesabından güvenle çıkış yap"
+                icon="log-out"
                 color="#9E9E9E"
                 onPress={() => {
                   Alert.alert(
@@ -615,49 +610,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginHorizontal: -4,
+    marginHorizontal: -6,
   },
   statCard: {
     width: (width - 40) / 2,
-    marginBottom: 12,
-    marginHorizontal: 4,
-    borderRadius: 16,
-    overflow: 'hidden',
-    ...colors.shadow,
-  },
-  statGradient: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
     padding: 16,
-    minHeight: 85,
+    marginBottom: 12,
+    marginHorizontal: 6,
+    ...colors.shadow,
+    shadowOpacity: 0.05,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.lightGray,
+  },
+  statIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   statContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
     flex: 1,
-  },
-  statText: {
-    marginLeft: 10,
-    flex: 1,
-    justifyContent: 'center',
   },
   statValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.white,
-    marginBottom: 1,
+    fontSize: 24,
+    fontWeight: '800',
+    marginBottom: 4,
   },
   statLabel: {
-    fontSize: 10,
-    color: colors.white,
-    opacity: 0.9,
-    lineHeight: 12,
-    numberOfLines: 1,
-    flexShrink: 1,
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
   },
   statSubtitle: {
-    fontSize: 10,
-    color: colors.white,
-    opacity: 0.8,
-    marginTop: 2,
+    fontSize: 11,
+    color: colors.warning,
+    marginTop: 4,
+    fontWeight: '500',
   },
 
   // Actions Section
@@ -665,56 +658,60 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginHorizontal: -4,
+    gap: 12,
   },
   actionCard: {
-    width: (width - 32) / 2,
-    marginBottom: 12,
-    marginHorizontal: 4,
-    borderRadius: 16,
-    overflow: 'hidden',
-    ...colors.shadow,
-  },
-  actionGradient: {
-    padding: 16,
-    minHeight: 110,
-    justifyContent: 'space-between',
-  },
-  actionHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: 16,
+    ...colors.shadow,
+    shadowOpacity: 0.05,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.lightGray,
+  },
+  actionIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  actionContent: {
+    flex: 1,
+  },
+  actionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 4,
+  },
+  actionDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
   actionBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 24,
-    alignItems: 'center',
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: colors.error,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 2,
+    borderColor: colors.white,
   },
   badgeText: {
     color: colors.white,
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 'bold',
   },
-  actionTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.white,
-    marginBottom: 3,
-    numberOfLines: 1,
-  },
-  actionDescription: {
-    fontSize: 11,
-    color: colors.white,
-    opacity: 0.9,
-    lineHeight: 14,
-    numberOfLines: 2,
+  actionArrow: {
+    marginLeft: 12,
   },
 
   // Activity Section

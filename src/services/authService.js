@@ -153,32 +153,45 @@ export const loginUser = async (email, password) => {
     console.error('Login error:', error);
     
     let errorMessage = 'Giriş sırasında bir hata oluştu.';
+    let messageKey = 'general.unexpectedError';
     
     switch (error.code) {
       case 'auth/user-not-found':
         errorMessage = 'Bu e-posta adresiyle kayıtlı kullanıcı bulunamadı.';
+        messageKey = 'auth.userNotFound';
         break;
       case 'auth/wrong-password':
         errorMessage = 'Yanlış şifre girdiniz.';
+        messageKey = 'auth.wrongPassword';
         break;
       case 'auth/invalid-email':
         errorMessage = 'Geçersiz e-posta adresi.';
+        messageKey = 'auth.invalidEmail';
+        break;
+      case 'auth/invalid-credential':
+      case 'auth/invalid-login-credentials':
+        errorMessage = 'E-posta veya şifre hatalı.';
+        messageKey = 'auth.invalidCredentials';
         break;
       case 'auth/user-disabled':
         errorMessage = 'Bu hesap devre dışı bırakılmış.';
+        messageKey = 'auth.userDisabled';
         break;
       case 'auth/too-many-requests':
         errorMessage = 'Çok fazla başarısız deneme. Lütfen daha sonra tekrar deneyin.';
+        messageKey = 'auth.tooManyRequests';
         break;
       case 'auth/network-request-failed':
         errorMessage = 'İnternet bağlantınızı kontrol edin.';
+        messageKey = 'errors.networkError';
         break;
     }
     
     return {
       success: false,
       error: error.code,
-      message: errorMessage
+      message: errorMessage,
+      messageKey: messageKey
     };
   }
 };
