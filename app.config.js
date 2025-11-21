@@ -4,7 +4,7 @@ export default ({ config }) => ({
   slug: config.slug || 'zenith-studio',
   version: '1.0.0',
   orientation: 'portrait',
-  icon: './assets/icon.png',
+  icon: './assets/zenith_logo_rounded.png',
   userInterfaceStyle: 'light',
   splash: {
     image: './assets/splash-icon.png',
@@ -19,12 +19,15 @@ export default ({ config }) => ({
     bundleIdentifier: 'com.zenithstudio.app', // ⚠️ TODO: Change this to your unique Bundle Identifier (e.g. com.yourname.zenith)
     buildNumber: '1',
     supportsTablet: true,
+    infoPlist: {
+      ITSAppUsesNonExemptEncryption: false,
+    },
   },
   android: {
     ...config.android,
     package: 'com.zenithstudio.app', // ⚠️ TODO: Change this to match ios.bundleIdentifier
     adaptiveIcon: {
-      foregroundImage: './assets/adaptive-icon.png',
+      foregroundImage: './assets/zenith_logo_rounded.png',
       backgroundColor: '#ffffff'
     }
   },
