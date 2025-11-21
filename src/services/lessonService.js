@@ -188,6 +188,32 @@ const getDefaultLessonTypes = () => {
   ];
 };
 
+// Normalize various date shapes (string, Date, Firestore Timestamp) into a Date
+const normalizeDateValue = (value) => {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value?.toDate === 'function') {
+    const parsed = value.toDate();
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  if (typeof value?.seconds === 'number') {
+    const parsed = new Date(value.seconds * 1000);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+};
+
 export const lessonService = {
   // Get lesson types
   getLessonTypes: fetchLessonTypes,
@@ -218,10 +244,18 @@ export const lessonService = {
         // Filter for active lessons only and ensure required fields exist
         if (data.status === 'active' && data.scheduledDate && data.startTime && data.endTime) {
           // Check if lesson is not in the past
-          const lessonDate = new Date(data.scheduledDate);
+          const lessonDate = normalizeDateValue(data.scheduledDate);
           const today = new Date();
           today.setHours(0, 0, 0, 0); // Set to start of day for comparison
           
+          if (!lessonDate) {
+            console.warn('Skipping lesson with invalid scheduledDate:', doc.id, { scheduledDate: data.scheduledDate });
+            return;
+          }
+
+          // Use a normalized ISO string so downstream components get consistent values
+          const scheduledDateISO = lessonDate.toISOString();
+
           // Only include lessons from today onwards
           if (lessonDate >= today) {
             // Get trainer information
@@ -243,7 +277,8 @@ export const lessonService = {
               id: doc.id,
               ...data,
               // Format the data for easier use
-              formattedDate: data.scheduledDate, // Store raw date for translation in screens
+              scheduledDate: scheduledDateISO,
+              formattedDate: scheduledDateISO, // Store normalized date string for translation in screens
               formattedTime: `${data.startTime} - ${data.endTime}`,
               currentParticipants: data.participants ? data.participants.length : 0,
               availableSpots: data.maxParticipants - (data.participants ? data.participants.length : 0),
@@ -285,12 +320,11 @@ export const lessonService = {
       // Sort by scheduled date and time on client side
       lessons.sort((a, b) => {
         try {
-          // Create comparable datetime strings
-          const dateTimeA = new Date(`${a.scheduledDate}T${a.startTime}`);
-          const dateTimeB = new Date(`${b.scheduledDate}T${b.startTime}`);
-          
+          const dateTimeA = normalizeDateValue(a.scheduledDate);
+          const dateTimeB = normalizeDateValue(b.scheduledDate);
+
           // Check if dates are valid
-          if (isNaN(dateTimeA.getTime()) || isNaN(dateTimeB.getTime())) {
+          if (!dateTimeA || !dateTimeB) {
             console.warn('Invalid date found during sorting:', {
               lessonA: { id: a.id, scheduledDate: a.scheduledDate, startTime: a.startTime },
               lessonB: { id: b.id, scheduledDate: b.scheduledDate, startTime: b.startTime }
@@ -689,25 +723,14 @@ const groupLessonsByDate = (lessons) => {
       console.warn('Lesson missing scheduledDate:', lesson.id);
       return; // Skip this lesson
     }
-    
-    let dateKey;
-    try {
-      // Handle different date formats
-      if (typeof lesson.scheduledDate === 'string') {
-        dateKey = lesson.scheduledDate.includes('T') 
-          ? lesson.scheduledDate.split('T')[0] 
-          : lesson.scheduledDate.split(' ')[0]; // Handle space-separated format
-      } else {
-        // If it's a Date object, convert to string
-        const dateObj = new Date(lesson.scheduledDate);
-        dateKey = dateObj.toISOString().split('T')[0];
-      }
-    } catch (error) {
+    const parsedDate = normalizeDateValue(lesson.scheduledDate);
+    if (!parsedDate) {
       console.warn('Error parsing date for lesson:', lesson.id, lesson.scheduledDate);
       return; // Skip this lesson
     }
-    
-    const formattedDate = lesson.formattedDate || formatDate(lesson.scheduledDate);
+
+    const dateKey = parsedDate.toISOString().split('T')[0];
+    const formattedDate = lesson.formattedDate || formatDate(parsedDate);
     
     if (!grouped[dateKey]) {
       grouped[dateKey] = {
@@ -850,6 +873,8 @@ const adminLessonService = {
       const lessons = querySnapshot.docs.map((lessonDoc) => {
         const data = lessonDoc.data();
         const trainer = data.trainerId ? trainersMap[data.trainerId] : null;
+        const normalizedDate = normalizeDateValue(data.scheduledDate);
+        const scheduledDate = normalizedDate ? normalizedDate.toISOString() : data.scheduledDate;
 
         const participants = data.participants || data.enrolledStudents || [];
         const currentParticipants = data.currentParticipants ?? participants.length;
@@ -857,6 +882,7 @@ const adminLessonService = {
         return {
           id: lessonDoc.id,
           ...data,
+          scheduledDate,
           trainerName:
             trainer?.displayName ||
             data.trainerName ||

@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -95,6 +95,10 @@ const getLessonAccessType = (lesson) => {
 const formatDateKey = (value) => {
   if (!value) return null;
 
+  if (value && typeof value === 'object' && value.date instanceof Date) {
+    value = value.date;
+  }
+
   let dateInstance = null;
 
   if (typeof value === 'string') {
@@ -143,6 +147,7 @@ export default function ClassSelectionScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateKey, setSelectedDateKey] = useState(null);
   const scrollY = new Animated.Value(0);
+  const hasManuallySelectedDate = useRef(false);
   
   const formatDisplayDate = (value) => {
     if (!value) return '';
@@ -190,17 +195,26 @@ export default function ClassSelectionScreen() {
 
   const availableDateKeys = useMemo(() => {
     const uniqueKeys = new Set();
-    groupedLessons.forEach(group => {
-      const directKey = formatDateKey(group.date || group.originalDate);
+    const addKey = (value) => {
+      const directKey = formatDateKey(value);
       if (directKey) {
         uniqueKeys.add(directKey);
-      } else if (group.date) {
-        uniqueKeys.add(group.date);
       }
+    };
+
+    groupedLessons.forEach(group => {
+      addKey(group.date);
+      addKey(group.originalDate);
+    });
+
+    lessons.forEach(lesson => {
+      addKey(lesson.scheduledDate);
+      addKey(lesson.originalDate);
+      addKey(lesson.date);
     });
 
     return Array.from(uniqueKeys).sort();
-  }, [groupedLessons]);
+  }, [groupedLessons, lessons]);
 
   useEffect(() => {
     if (availableDateKeys.length === 0) {
@@ -211,12 +225,18 @@ export default function ClassSelectionScreen() {
     }
 
     setSelectedDateKey(prev => {
-      if (prev && availableDateKeys.includes(prev)) {
+      const prevIsValid = prev && availableDateKeys.includes(prev);
+      if (prevIsValid) {
         return prev;
       }
+
+      if (hasManuallySelectedDate.current) {
+        return null;
+      }
+
       return availableDateKeys[0];
     });
-  }, [availableDateKeys]);
+  }, [availableDateKeys, selectedDateKey]);
 
   // Re-format dates when language changes
   useEffect(() => {
@@ -296,6 +316,11 @@ export default function ClassSelectionScreen() {
     setRefreshing(false);
   };
 
+  const handleSelectDate = (value) => {
+    hasManuallySelectedDate.current = true;
+    setSelectedDateKey(value);
+  };
+
   const filterLessons = () => {
     // Debug logging
     console.log('🔍 Filter Debug - User package info:', {
@@ -311,7 +336,11 @@ export default function ClassSelectionScreen() {
 
     let filteredGroups = groupedLessons.map(group => {
       if (selectedDateKey) {
-        const groupDateKey = formatDateKey(group.date || group.originalDate);
+        const groupDateKey = formatDateKey(
+          group.date ||
+          group.originalDate ||
+          (group.lessons?.[0]?.scheduledDate || group.lessons?.[0]?.originalDate)
+        );
         if (groupDateKey !== selectedDateKey) {
           return {
             ...group,
@@ -575,7 +604,9 @@ export default function ClassSelectionScreen() {
           <DateCarouselPicker
             dates={availableDateKeys}
             selectedDate={selectedDateKey}
-            onSelectDate={setSelectedDateKey}
+            onSelectDate={handleSelectDate}
+            allowClear
+            allLabel={t('classSelection.allDates') || 'All Dates'}
           />
 
           {/* Available Classes with Enhanced Design */}

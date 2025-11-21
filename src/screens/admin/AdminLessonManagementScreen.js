@@ -117,10 +117,8 @@ export default function AdminLessonManagementScreen({ navigation }) {
       const key = formatDateKey(lesson.scheduledDate);
       if (key) {
         // Only include dates from today onwards
-        const lessonDate = new Date(lesson.scheduledDate);
-        lessonDate.setHours(0, 0, 0, 0);
-        
-        if (lessonDate >= today) {
+        const lessonDate = new Date(key);
+        if (!Number.isNaN(lessonDate.getTime()) && lessonDate >= today) {
           uniqueKeys.add(key);
         }
       }

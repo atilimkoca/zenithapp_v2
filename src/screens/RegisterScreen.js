@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,14 +14,19 @@ import {
   TextInput,
   Modal,
   FlatList,
+  Dimensions,
+  Animated,
+  StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { CustomInput, CustomButton } from '../components/UI';
+import { CustomInput, CustomButton, GlassContainer, BackgroundBlob, Divider } from '../components/UI';
 import { colors } from '../constants/colors';
 import { registerUser } from '../services/authService';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { Ionicons } from '@expo/vector-icons';
+
+const { width, height } = Dimensions.get('window');
 
 const COUNTRY_OPTIONS = [
   { code: 'TR', name: 'Türkiye', dialCode: '+90', flag: '🇹🇷', example: '5XX XXX XX XX' },
@@ -47,6 +52,28 @@ export default function RegisterScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [isCountryModalVisible, setCountryModalVisible] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   const handleOpenTerms = () => navigation.navigate('Terms');
   const handleOpenPrivacy = () => navigation.navigate('Privacy');
@@ -122,7 +149,6 @@ export default function RegisterScreen({ navigation }) {
       );
       
       if (result.success) {
-        // Update context with user data for immediate state change
         if (result.userData) {
           setUserData(result.userData);
           setApprovalStatus('pending');
@@ -134,7 +160,6 @@ export default function RegisterScreen({ navigation }) {
           [
             {
               text: t('confirm')
-              // App will automatically navigate to pending approval screen
             }
           ]
         );
@@ -149,11 +174,29 @@ export default function RegisterScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={[colors.background, colors.lightGray]}
-        style={styles.gradient}
-      >
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      
+      {/* Background Design */}
+      <View style={styles.backgroundContainer}>
+        <LinearGradient
+          colors={[colors.primaryDark, colors.primary]}
+          style={styles.topGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+        <BackgroundBlob 
+          style={{ top: -30, left: -30, width: 180, height: 180, backgroundColor: 'rgba(255,255,255,0.08)' }} 
+        />
+        <BackgroundBlob 
+          style={{ top: 80, right: -40, width: 140, height: 140, backgroundColor: 'rgba(255,255,255,0.05)' }} 
+        />
+        <View style={styles.curveContainer}>
+          <View style={styles.curve} />
+        </View>
+      </View>
+
+      <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView 
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
@@ -161,33 +204,38 @@ export default function RegisterScreen({ navigation }) {
           <ScrollView 
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
             {/* Header Section */}
-            <View style={styles.headerSection}>
+            <Animated.View 
+              style={[
+                styles.headerSection,
+                { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
+              ]}
+            >
               <TouchableOpacity 
                 style={styles.backButton}
                 onPress={() => navigation.goBack()}
               >
-                <Text style={styles.backButtonText}>←</Text>
+                <Ionicons name="arrow-back" size={24} color={colors.primary} />
               </TouchableOpacity>
               
-              <View style={styles.logoContainer}>
-                <Image 
-                  source={require('../../assets/zenith_logo_rounded.jpeg')}
-                  style={styles.logo}
-                  resizeMode="contain"
-                />
+              <View style={styles.headerTextContainer}>
+                <Text style={styles.title}>{t('auth.createAccount')}</Text>
+                <Text style={styles.subtitle}>
+                  {t('auth.registerSubtitle')}
+                </Text>
               </View>
-              
-              <Text style={styles.title}>{t('auth.createAccount')}</Text>
-              <Text style={styles.subtitle}>
-                {t('auth.registerSubtitle')}
-              </Text>
-            </View>
+            </Animated.View>
 
             {/* Form Section */}
-            <View style={styles.formSection}>
-              <View style={styles.formContainer}>
+            <Animated.View 
+              style={[
+                styles.formSection,
+                { opacity: fadeAnim, transform: [{ translateY: Animated.multiply(slideAnim, 1.5) }] }
+              ]}
+            >
+              <GlassContainer style={styles.formCard}>
                 <View style={styles.nameRow}>
                   <View style={styles.nameInput}>
                     <CustomInput
@@ -196,6 +244,7 @@ export default function RegisterScreen({ navigation }) {
                       onChangeText={(value) => updateFormData('firstName', value)}
                       placeholder={t('auth.firstNamePlaceholder')}
                       error={errors.firstName}
+                      icon="person-outline"
                     />
                   </View>
                   <View style={styles.nameInput}>
@@ -216,41 +265,49 @@ export default function RegisterScreen({ navigation }) {
                   placeholder={t('auth.emailPlaceholder')}
                   keyboardType="email-address"
                   error={errors.email}
+                  icon="mail-outline"
                 />
                 
-                <View style={styles.inputLabelRow}>
-                  <Text style={styles.inputLabel}>{t('auth.phone')}</Text>
-                  <Text style={styles.countryHint}>{selectedCountry.name}</Text>
+                <View style={styles.phoneContainer}>
+                  <Text style={styles.label}>{t('auth.phone')}</Text>
+                  <View style={[styles.phoneInputWrapper, errors.phone && styles.inputErrorBorder]}>
+                    <TouchableOpacity
+                      style={styles.countrySelector}
+                      onPress={() => setCountryModalVisible(true)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
+                      <Text style={styles.countryDial}>{selectedCountry.dialCode}</Text>
+                      <Ionicons name="chevron-down" size={14} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                    <TextInput
+                      style={styles.phoneInput}
+                      value={formData.phone}
+                      onChangeText={(value) => updateFormData('phone', value)}
+                      placeholder={selectedCountry.example || t('auth.phoneNumberPlaceholder')}
+                      placeholderTextColor={colors.textLight}
+                      keyboardType="number-pad"
+                      maxLength={15}
+                    />
+                  </View>
+                  {errors.phone && (
+                    <View style={styles.errorContainer}>
+                      <Ionicons name="alert-circle-outline" size={14} color={colors.error} />
+                      <Text style={styles.errorText}>{errors.phone}</Text>
+                    </View>
+                  )}
                 </View>
-                <View style={[styles.phoneInputRow, errors.phone && styles.inputErrorBorder]}>
-                  <TouchableOpacity
-                    style={styles.countrySelector}
-                    onPress={() => setCountryModalVisible(true)}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.countryFlag}>{selectedCountry.flag}</Text>
-                    <Text style={styles.countryDial}>{selectedCountry.dialCode}</Text>
-                    <Ionicons name="chevron-down" size={16} color={colors.textSecondary} style={styles.countryChevron} />
-                  </TouchableOpacity>
-                  <TextInput
-                    style={styles.phoneTextInput}
-                    value={formData.phone}
-                    onChangeText={(value) => updateFormData('phone', value)}
-                    placeholder={selectedCountry.example || t('auth.phoneNumberPlaceholder')}
-                    placeholderTextColor={colors.textLight}
-                    keyboardType="number-pad"
-                    maxLength={16}
-                  />
-                </View>
-                {errors.phone && <Text style={styles.phoneErrorText}>{errors.phone}</Text>}
                 
                 <CustomInput
                   label={t('auth.password')}
                   value={formData.password}
                   onChangeText={(value) => updateFormData('password', value)}
                   placeholder={t('auth.createPasswordPlaceholder')}
-                  secureTextEntry
+                  secureTextEntry={!showPassword}
                   error={errors.password}
+                  icon="lock-closed-outline"
+                  rightIcon={showPassword ? "eye-off-outline" : "eye-outline"}
+                  onRightIconPress={() => setShowPassword(!showPassword)}
                 />
                 
                 <CustomInput
@@ -258,8 +315,11 @@ export default function RegisterScreen({ navigation }) {
                   value={formData.confirmPassword}
                   onChangeText={(value) => updateFormData('confirmPassword', value)}
                   placeholder={t('auth.confirmPasswordPlaceholder')}
-                  secureTextEntry
+                  secureTextEntry={!showConfirmPassword}
                   error={errors.confirmPassword}
+                  icon="lock-closed-outline"
+                  rightIcon={showConfirmPassword ? "eye-off-outline" : "eye-outline"}
+                  onRightIconPress={() => setShowConfirmPassword(!showConfirmPassword)}
                 />
                 
                 {/* Terms and Conditions */}
@@ -268,10 +328,9 @@ export default function RegisterScreen({ navigation }) {
                     style={styles.checkboxTouchable}
                     onPress={() => setAgreeToTerms(!agreeToTerms)}
                     activeOpacity={0.8}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <View style={[styles.checkbox, agreeToTerms && styles.checkboxChecked]}>
-                      {agreeToTerms && <Text style={styles.checkmark}>✓</Text>}
+                      {agreeToTerms && <Ionicons name="checkmark" size={14} color={colors.white} />}
                     </View>
                   </TouchableOpacity>
                   <View style={styles.termsTextWrapper}>
@@ -288,28 +347,31 @@ export default function RegisterScreen({ navigation }) {
                     </Text>
                   </View>
                 </View>
-                {errors.terms && <Text style={styles.errorText}>{errors.terms}</Text>}
+                {errors.terms && (
+                  <Text style={[styles.errorText, { marginLeft: 32, marginTop: -8, marginBottom: 16 }]}>
+                    {errors.terms}
+                  </Text>
+                )}
 
                 <CustomButton
                   title={loading ? t('auth.creatingAccount') : t('auth.createAccountButton')}
                   onPress={handleRegister}
                   disabled={loading}
+                  loading={loading}
                   style={styles.registerButton}
+                  icon="person-add-outline"
                 />
-              </View>
-            </View>
 
-            {/* Login Link Section */}
-            <View style={styles.loginSection}>
-              <View style={styles.loginTextContainer}>
-                <Text style={styles.loginText}>
-                  {t('auth.alreadyHaveAccount')}
-                </Text>
-                <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-                  <Text style={styles.loginLink}>{t('auth.loginLinkText')}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+                <View style={styles.loginSection}>
+                  <Text style={styles.loginText}>
+                    {t('auth.alreadyHaveAccount')}
+                  </Text>
+                  <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+                    <Text style={styles.loginLink}>{t('auth.loginLinkText')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </GlassContainer>
+            </Animated.View>
           </ScrollView>
 
           <Modal
@@ -323,13 +385,17 @@ export default function RegisterScreen({ navigation }) {
                 <View style={styles.modalBackdrop} />
               </TouchableWithoutFeedback>
               <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>{t('auth.selectCountry')}</Text>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>{t('auth.selectCountry')}</Text>
+                  <TouchableOpacity onPress={() => setCountryModalVisible(false)}>
+                    <Ionicons name="close" size={24} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
                 <FlatList
                   data={COUNTRY_OPTIONS}
                   keyExtractor={(item) => item.code}
                   ItemSeparatorComponent={() => <View style={styles.countryOptionDivider} />}
                   showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
                   renderItem={({ item }) => {
                     const isSelected = item.code === selectedCountry.code;
                     return (
@@ -339,18 +405,17 @@ export default function RegisterScreen({ navigation }) {
                           setSelectedCountry(item);
                           setCountryModalVisible(false);
                         }}
-                        activeOpacity={0.8}
+                        activeOpacity={0.7}
                       >
                         <Text style={styles.countryOptionFlag}>{item.flag}</Text>
                         <View style={styles.countryOptionTextWrapper}>
                           <Text style={styles.countryOptionName}>{item.name}</Text>
                           <Text style={styles.countryOptionDial}>
                             {item.dialCode}
-                            {item.example ? ` • ${item.example}` : ''}
                           </Text>
                         </View>
                         {isSelected && (
-                          <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                          <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
                         )}
                       </TouchableOpacity>
                     );
@@ -361,8 +426,8 @@ export default function RegisterScreen({ navigation }) {
           </Modal>
 
         </KeyboardAvoidingView>
-      </LinearGradient>
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 
@@ -371,7 +436,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  gradient: {
+  backgroundContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: height * 0.35,
+    overflow: 'hidden',
+  },
+  topGradient: {
+    flex: 1,
+  },
+  curveContainer: {
+    position: 'absolute',
+    bottom: -50,
+    left: 0,
+    right: 0,
+    height: 100,
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 50,
+    borderTopRightRadius: 50,
+    transform: [{ scaleX: 1.5 }],
+  },
+  safeArea: {
     flex: 1,
   },
   keyboardView: {
@@ -380,44 +467,20 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
+    paddingBottom: 40,
   },
   headerSection: {
-    alignItems: 'center',
-    paddingTop: 20,
-    paddingBottom: 30,
+    marginTop: 20,
+    marginBottom: 24,
   },
   backButton: {
-    position: 'absolute',
-    left: 0,
-    top: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.white,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  backButtonText: {
-    fontSize: 20,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-    marginTop: 40,
+    marginBottom: 24,
     shadowColor: colors.black,
     shadowOffset: {
       width: 0,
@@ -427,79 +490,123 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  logo: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+  headerTextContainer: {
+    paddingLeft: 4,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
+    fontSize: 32,
+    fontWeight: '800',
+    color: colors.white,
     marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.15)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   subtitle: {
     fontSize: 16,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: '500',
   },
   formSection: {
     flex: 1,
   },
-  formContainer: {
-    backgroundColor: colors.white,
-    borderRadius: 20,
+  formCard: {
+    // Styles handled by GlassContainer default + overrides
     padding: 24,
-    shadowColor: colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 8,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 8,
   },
   nameRow: {
     flexDirection: 'row',
-    marginHorizontal: -8,
+    marginHorizontal: -6,
   },
   nameInput: {
     flex: 1,
-    marginHorizontal: 8,
+    marginHorizontal: 6,
+  },
+  phoneContainer: {
+    marginVertical: 10,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    marginBottom: 8,
+    marginLeft: 4,
+  },
+  phoneInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: colors.gray,
+    height: 56,
+    overflow: 'hidden',
+  },
+  inputErrorBorder: {
+    borderColor: colors.error,
+  },
+  countrySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    height: '100%',
+    borderRightWidth: 1,
+    borderRightColor: colors.gray,
+    backgroundColor: colors.lightGray,
+  },
+  countryFlag: {
+    fontSize: 20,
+    marginRight: 8,
+  },
+  countryDial: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginRight: 6,
+  },
+  phoneInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.textPrimary,
+    paddingHorizontal: 16,
+    height: '100%',
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    marginLeft: 4,
+  },
+  errorText: {
+    fontSize: 12,
+    color: colors.error,
+    marginLeft: 4,
   },
   termsContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    marginVertical: 16,
+    marginVertical: 20,
+    paddingHorizontal: 4,
   },
   checkboxTouchable: {
     marginRight: 12,
     marginTop: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 6,
     borderWidth: 2,
-    borderColor: colors.gray,
+    borderColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: colors.white,
   },
   checkboxChecked: {
     backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  checkmark: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   termsTextWrapper: {
     flex: 1,
-    paddingRight: 8,
   },
   termsText: {
     fontSize: 14,
@@ -508,77 +615,32 @@ const styles = StyleSheet.create({
   },
   termsLink: {
     color: colors.primary,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
+    fontWeight: '700',
   },
-  inputLabelRow: {
+  registerButton: {
+    marginBottom: 20,
+  },
+  loginSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 6,
+    justifyContent: 'center',
+    paddingTop: 8,
   },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
+  loginText: {
+    fontSize: 15,
     color: colors.textSecondary,
   },
-  countryHint: {
-    marginLeft: 8,
-    fontSize: 12,
-    color: colors.textLight,
+  loginLink: {
+    fontSize: 15,
+    color: colors.primary,
+    fontWeight: '700',
+    marginLeft: 6,
   },
-  phoneInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: 'rgba(107, 114, 128, 0.2)',
-    backgroundColor: colors.white,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  inputErrorBorder: {
-    borderColor: colors.error,
-  },
-  countrySelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRightWidth: 1,
-    borderColor: 'rgba(107, 114, 128, 0.16)',
-    marginRight: 12,
-  },
-  countryFlag: {
-    fontSize: 20,
-    marginRight: 6,
-  },
-  countryChevron: {
-    marginLeft: 4,
-  },
-
-  countryDial: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginRight: 4,
-  },
-  phoneTextInput: {
-    flex: 1,
-    fontSize: 14,
-    color: colors.textPrimary,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-  },
-  phoneErrorText: {
-    fontSize: 12,
-    color: colors.error,
-    marginTop: 4,
-    marginBottom: 8,
-  },
+  
+  // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalBackdrop: {
@@ -589,92 +651,53 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    paddingTop: 16,
-    paddingHorizontal: 20,
-    paddingBottom: 32,
-    maxHeight: '60%',
+    paddingBottom: 40,
+    maxHeight: '70%',
     width: '100%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.gray,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: 16,
   },
   countryOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
   },
   countryOptionActive: {
-    backgroundColor: 'rgba(107, 127, 106, 0.08)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    backgroundColor: colors.lightGray,
   },
   countryOptionFlag: {
-    fontSize: 20,
-    marginRight: 12,
+    fontSize: 24,
+    marginRight: 16,
   },
   countryOptionTextWrapper: {
     flex: 1,
   },
   countryOptionName: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: colors.textPrimary,
+    marginBottom: 2,
   },
   countryOptionDial: {
-    fontSize: 13,
+    fontSize: 14,
     color: colors.textSecondary,
-    marginTop: 2,
   },
   countryOptionDivider: {
     height: 1,
-    backgroundColor: 'rgba(107, 114, 128, 0.12)',
-    marginLeft: 44,
-    marginRight: 12,
-  },
-  errorText: {
-    fontSize: 14,
-    color: colors.error,
-    marginTop: -8,
-    marginBottom: 8,
-  },
-  registerButton: {
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
     backgroundColor: colors.gray,
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  loginSection: {
-    paddingVertical: 24,
-    alignItems: 'center',
-  },
-  loginTextContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  loginText: {
-    fontSize: 16,
-    color: colors.textSecondary,
-  },
-  loginLink: {
-    fontSize: 16,
-    color: colors.primary,
-    fontWeight: '600',
+    marginLeft: 60,
   },
 });
+

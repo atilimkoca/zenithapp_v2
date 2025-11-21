@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -14,27 +14,52 @@ import {
   TextInput,
   ActivityIndicator,
   Dimensions,
+  Animated,
+  StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { CustomInput, CustomButton } from '../components/UI';
+import { CustomInput, CustomButton, GlassContainer, BackgroundBlob } from '../components/UI';
 import { colors } from '../constants/colors';
 import { loginUser, resetPassword } from '../services/authService';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 
+const { width, height } = Dimensions.get('window');
+
 export default function LoginScreen({ navigation }) {
   const { t } = useI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
   
   // Forgot Password Modal State
   const [forgotPasswordModalVisible, setForgotPasswordModalVisible] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
   const [resetEmailError, setResetEmailError] = useState('');
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   const validateForm = () => {
     const newErrors = {};
@@ -65,11 +90,7 @@ export default function LoginScreen({ navigation }) {
       
       if (result.success) {
         if (result.requiresApproval) {
-          // User is logged in but needs approval - show appropriate message
           Alert.alert(t('info'), result.messageKey ? t(result.messageKey) : result.message);
-          // Navigation will be handled automatically by the auth context
-        } else {
-          // User is fully approved - no alert needed, navigation handled by auth context
         }
       } else {
         Alert.alert(t('error'), result.messageKey ? t(result.messageKey) : result.message);
@@ -82,7 +103,7 @@ export default function LoginScreen({ navigation }) {
   };
 
   const handleForgotPassword = () => {
-    setResetEmail(email); // Pre-fill with login email if available
+    setResetEmail(email);
     setResetEmailError('');
     setForgotPasswordModalVisible(true);
   };
@@ -125,11 +146,29 @@ export default function LoginScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <LinearGradient
-        colors={[colors.background, colors.lightGray]}
-        style={styles.gradient}
-      >
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" />
+      
+      {/* Background Design */}
+      <View style={styles.backgroundContainer}>
+        <LinearGradient
+          colors={[colors.primaryDark, colors.primary]}
+          style={styles.topGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+        />
+        <BackgroundBlob 
+          style={{ top: -50, right: -50, width: 200, height: 200, backgroundColor: 'rgba(255,255,255,0.1)' }} 
+        />
+        <BackgroundBlob 
+          style={{ top: 100, left: -30, width: 150, height: 150, backgroundColor: 'rgba(255,255,255,0.05)' }} 
+        />
+        <View style={styles.curveContainer}>
+          <View style={styles.curve} />
+        </View>
+      </View>
+
+      <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView 
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
@@ -137,25 +176,36 @@ export default function LoginScreen({ navigation }) {
           <ScrollView 
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
           >
             {/* Logo Section */}
-            <View style={styles.logoSection}>
+            <Animated.View 
+              style={[
+                styles.logoSection, 
+                { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
+              ]}
+            >
               <View style={styles.logoContainer}>
                 <Image 
                   source={require('../../assets/zenith_logo_rounded.jpeg')}
                   style={styles.logo}
-                  resizeMode="contain"
+                  resizeMode="cover"
                 />
               </View>
               <Text style={styles.welcomeTitle}>{t('auth.welcome')}</Text>
               <Text style={styles.welcomeSubtitle}>
                 {t('auth.welcomeSubtitle')}
               </Text>
-            </View>
+            </Animated.View>
 
             {/* Form Section */}
-            <View style={styles.formSection}>
-              <View style={styles.formContainer}>
+            <Animated.View 
+              style={[
+                styles.formSection,
+                { opacity: fadeAnim, transform: [{ translateY: Animated.multiply(slideAnim, 1.5) }] }
+              ]}
+            >
+              <GlassContainer style={styles.formCard}>
                 <CustomInput
                   label={t('auth.email')}
                   value={email}
@@ -163,6 +213,7 @@ export default function LoginScreen({ navigation }) {
                   placeholder={t('auth.emailPlaceholder')}
                   keyboardType="email-address"
                   error={errors.email}
+                  icon="mail-outline"
                 />
                 
                 <CustomInput
@@ -170,8 +221,11 @@ export default function LoginScreen({ navigation }) {
                   value={password}
                   onChangeText={setPassword}
                   placeholder={t('auth.passwordPlaceholder')}
-                  secureTextEntry
+                  secureTextEntry={!showPassword}
                   error={errors.password}
+                  icon="lock-closed-outline"
+                  rightIcon={showPassword ? "eye-off-outline" : "eye-outline"}
+                  onRightIconPress={() => setShowPassword(!showPassword)}
                 />
                 
                 <TouchableOpacity 
@@ -187,98 +241,75 @@ export default function LoginScreen({ navigation }) {
                   title={loading ? t('auth.loggingIn') : t('auth.loginButton')}
                   onPress={handleLogin}
                   disabled={loading}
+                  loading={loading}
                   style={styles.loginButton}
+                  icon="log-in-outline"
                 />
-              </View>
-            </View>
 
-            {/* Register Section */}
-            <View style={styles.registerSection}>
-              <View style={styles.registerTextContainer}>
-                <Text style={styles.registerText}>
-                  {t('auth.noAccount')}
-                </Text>
-                <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-                  <Text style={styles.registerLink}>{t('auth.registerLink')}</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+                <View style={styles.registerContainer}>
+                  <Text style={styles.registerText}>
+                    {t('auth.noAccount')}
+                  </Text>
+                  <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+                    <Text style={styles.registerLink}>{t('auth.registerLink')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </GlassContainer>
+            </Animated.View>
           </ScrollView>
         </KeyboardAvoidingView>
-      </LinearGradient>
+      </SafeAreaView>
 
       {/* Forgot Password Modal */}
       <Modal
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         visible={forgotPasswordModalVisible}
         onRequestClose={closeForgotPasswordModal}
       >
         <KeyboardAvoidingView 
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.modalKeyboardView}
+          style={styles.modalContainer}
         >
-          <View style={styles.modalOverlay}>
-            <TouchableOpacity 
-              style={styles.modalBackdrop}
-              activeOpacity={1}
-              onPress={closeForgotPasswordModal}
-            />
-            <View style={styles.modalContent}>
-            {/* Modal Handle */}
-            <View style={styles.modalHandle} />
-            
-            {/* Modal Header */}
+          <TouchableOpacity 
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={closeForgotPasswordModal}
+          />
+          
+          <GlassContainer style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <TouchableOpacity 
-                style={styles.closeButton}
-                onPress={closeForgotPasswordModal}
-              >
-                <Ionicons name="close" size={24} color={colors.textSecondary} />
-              </TouchableOpacity>
-              
-              <View style={styles.modalHeaderContent}>
-                <View style={styles.modalIconContainer}>
-                  <Ionicons name="lock-closed-outline" size={24} color={colors.primary} />
-                </View>
-                <View style={styles.modalTextContainer}>
-                  <Text style={styles.modalTitle}>{t('auth.forgotPassword')}</Text>
-                  <Text style={styles.modalSubtitle}>{t('auth.resetPasswordSubtitle') || 'Şifrenizi sıfırlamak için e-posta adresinizi girin'}</Text>
-                </View>
+              <View style={styles.modalIconContainer}>
+                <Ionicons name="key-outline" size={28} color={colors.primary} />
               </View>
+              <Text style={styles.modalTitle}>{t('auth.forgotPassword')}</Text>
+              <Text style={styles.modalSubtitle}>
+                {t('auth.resetPasswordSubtitle') || 'Şifrenizi sıfırlamak için e-posta adresinizi girin'}
+              </Text>
             </View>
 
-            {/* Modal Form */}
-            <ScrollView style={styles.modalForm} showsVerticalScrollIndicator={false}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>{t('auth.email')}</Text>
-                <View style={styles.modernInputContainer}>
-                  <Ionicons name="mail-outline" size={20} color={colors.textSecondary} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.modernTextInput}
-                    value={resetEmail}
-                    onChangeText={(text) => {
-                      setResetEmail(text);
-                      setResetEmailError('');
-                    }}
-                    placeholder={t('auth.emailPlaceholder')}
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
-                </View>
-                {resetEmailError ? <Text style={styles.errorText}>{resetEmailError}</Text> : null}
-              </View>
-
+            <View style={styles.modalBody}>
+              <CustomInput
+                label={t('auth.email')}
+                value={resetEmail}
+                onChangeText={(text) => {
+                  setResetEmail(text);
+                  setResetEmailError('');
+                }}
+                placeholder={t('auth.emailPlaceholder')}
+                keyboardType="email-address"
+                icon="mail-outline"
+                error={resetEmailError}
+              />
+              
               <View style={styles.infoContainer}>
                 <Ionicons name="information-circle-outline" size={20} color={colors.info} />
                 <Text style={styles.infoText}>
                   {t('auth.resetPasswordInfo') || 'Şifre sıfırlama bağlantısı e-posta adresinize gönderilecektir.'}
                 </Text>
               </View>
-            </ScrollView>
+            </View>
 
-            {/* Modal Footer */}
             <View style={styles.modalFooter}>
               <TouchableOpacity 
                 style={styles.cancelButton}
@@ -295,23 +326,24 @@ export default function LoginScreen({ navigation }) {
                 <LinearGradient
                   colors={[colors.primary, colors.primaryDark]}
                   style={styles.resetButtonGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                 >
                   {resetLoading ? (
                     <ActivityIndicator color={colors.white} size="small" />
                   ) : (
                     <>
-                      <Ionicons name="send" size={20} color={colors.white} />
                       <Text style={styles.resetButtonText}>{t('auth.sendButton') || 'Gönder'}</Text>
+                      <Ionicons name="arrow-forward" size={20} color={colors.white} style={{ marginLeft: 8 }} />
                     </>
                   )}
                 </LinearGradient>
               </TouchableOpacity>
             </View>
-            </View>
-          </View>
+          </GlassContainer>
         </KeyboardAvoidingView>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -320,7 +352,29 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  gradient: {
+  backgroundContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: height * 0.45,
+    overflow: 'hidden',
+  },
+  topGradient: {
+    flex: 1,
+  },
+  curveContainer: {
+    position: 'absolute',
+    bottom: -50,
+    left: 0,
+    right: 0,
+    height: 100,
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 50,
+    borderTopRightRadius: 50,
+    transform: [{ scaleX: 1.5 }],
+  },
+  safeArea: {
     flex: 1,
   },
   keyboardView: {
@@ -329,61 +383,58 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
+    paddingBottom: 40,
   },
   logoSection: {
     alignItems: 'center',
-    paddingTop: 60,
-    paddingBottom: 40,
+    marginTop: height * 0.08,
+    marginBottom: 30,
   },
   logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 110,
+    height: 110,
+    borderRadius: 55,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 24,
-    shadowColor: colors.black,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  logo: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-  },
-  welcomeTitle: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  welcomeSubtitle: {
-    fontSize: 16,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  formSection: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  formContainer: {
+    marginBottom: 20,
     backgroundColor: colors.white,
-    borderRadius: 20,
-    padding: 24,
     shadowColor: colors.black,
     shadowOffset: {
       width: 0,
       height: 8,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
     elevation: 8,
+    borderWidth: 4,
+    borderColor: colors.white,
+  },
+  logo: {
+    width: 102,
+    height: 102,
+    borderRadius: 51,
+  },
+  welcomeTitle: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: colors.white,
+    marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.15)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  welcomeSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  formSection: {
+    flex: 1,
+  },
+  formCard: {
+    // Styles handled by GlassContainer default + overrides
+    padding: 24,
   },
   forgotPassword: {
     alignSelf: 'flex-end',
@@ -393,52 +444,34 @@ const styles = StyleSheet.create({
   forgotPasswordText: {
     fontSize: 14,
     color: colors.primary,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   loginButton: {
-    marginBottom: 16,
+    marginBottom: 10,
   },
-  divider: {
+  registerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 20,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.gray,
-  },
-  dividerText: {
-    marginHorizontal: 16,
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  registerSection: {
-    paddingVertical: 24,
-    alignItems: 'center',
-  },
-  registerTextContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    justifyContent: 'center',
   },
   registerText: {
-    fontSize: 16,
+    fontSize: 15,
     color: colors.textSecondary,
   },
   registerLink: {
-    fontSize: 16,
+    fontSize: 15,
     color: colors.primary,
-    fontWeight: '600',
+    fontWeight: '700',
+    marginLeft: 6,
   },
-
+  
   // Modal Styles
-  modalKeyboardView: {
+  modalContainer: {
     flex: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 20,
   },
   modalBackdrop: {
     position: 'absolute',
@@ -446,133 +479,64 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'transparent', // Remove gray background
   },
   modalContent: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingTop: 8,
-    paddingHorizontal: 24,
-    maxHeight: Dimensions.get('window').height * 0.6,
-    minHeight: Dimensions.get('window').height * 0.35,
-  },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: colors.border,
-    borderRadius: 2,
-    alignSelf: 'center',
-    marginTop: 8,
-    marginBottom: 20,
+    width: '100%',
+    maxWidth: 400,
+    padding: 24,
   },
   modalHeader: {
-    position: 'relative',
-    marginBottom: 16,
-  },
-  modalHeaderContent: {
-    flexDirection: 'row',
     alignItems: 'center',
-    paddingRight: 50, // Space for close button
-  },
-  modalTextContainer: {
-    flex: 1,
+    marginBottom: 24,
   },
   modalIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primary + '15',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: colors.lightGray,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
+    marginBottom: 16,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: 'bold',
     color: colors.textPrimary,
+    marginBottom: 8,
   },
   modalSubtitle: {
     fontSize: 14,
     color: colors.textSecondary,
-    marginTop: 2,
+    textAlign: 'center',
+    lineHeight: 20,
   },
-  closeButton: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  modalForm: {
-    flex: 1,
-    paddingBottom: 8,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 8,
-  },
-  modernInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  modernTextInput: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.textPrimary,
-    paddingVertical: 12,
-  },
-  errorText: {
-    fontSize: 12,
-    color: colors.error,
-    marginTop: 4,
-    marginLeft: 4,
+  modalBody: {
+    marginBottom: 24,
   },
   infoContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: colors.info + '10',
+    backgroundColor: 'rgba(59, 130, 246, 0.08)',
     padding: 16,
-    borderRadius: 12,
-    marginTop: 8,
+    borderRadius: 16,
+    marginTop: 16,
   },
   infoText: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.info,
     marginLeft: 12,
     flex: 1,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   modalFooter: {
     flexDirection: 'row',
-    paddingTop: 16,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
     gap: 12,
   },
   cancelButton: {
     flex: 1,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: colors.background,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: colors.lightGray,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -582,12 +546,12 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   resetButton: {
-    flex: 2,
-    borderRadius: 12,
+    flex: 1.5,
+    borderRadius: 16,
     overflow: 'hidden',
   },
   resetButtonGradient: {
-    padding: 16,
+    paddingVertical: 14,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -596,6 +560,5 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 16,
     fontWeight: '700',
-    marginLeft: 8,
   },
 });

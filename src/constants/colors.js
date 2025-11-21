@@ -13,6 +13,7 @@ export const colors = {
   white: '#FFFFFF',
   lightGray: '#F5F7F5',
   gray: '#E5E7E5',
+  border: '#E5E7E5',
   darkGray: '#6B7280',
   black: '#1F2937',
   

@@ -1,12 +1,19 @@
 ﻿import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Localization from 'expo-localization';
 import enTranslations from '../locales/en';
 import trTranslations from '../locales/tr';
 
 const I18nContext = createContext();
 
 export const I18nProvider = ({ children }) => {
-  const [currentLanguage, setCurrentLanguage] = useState('en');
+  const [currentLanguage, setCurrentLanguage] = useState(() => {
+    const locales = Localization.getLocales();
+    const deviceLanguage = locales && locales[0] ? locales[0].languageCode : 'en';
+    const initialLang = deviceLanguage.startsWith('tr') ? 'tr' : 'en';
+    console.log('I18n: Device language detected:', deviceLanguage, 'Initial app language:', initialLang);
+    return initialLang;
+  });
   const [isLoading, setIsLoading] = useState(true);
 
   const allTranslations = {
@@ -18,8 +25,18 @@ export const I18nProvider = ({ children }) => {
     const loadLanguage = async () => {
       try {
         const savedLanguage = await AsyncStorage.getItem('language');
+        const isManuallySet = await AsyncStorage.getItem('language_manually_set');
+        
+        console.log('I18n: Loading language. Saved:', savedLanguage, 'Manually set:', isManuallySet);
+        
         if (savedLanguage && ['en', 'tr'].includes(savedLanguage)) {
-          setCurrentLanguage(savedLanguage);
+          // Only use saved language if it was manually set by the user
+          // This prevents old default 'en' from overriding device language
+          if (isManuallySet === 'true') {
+            setCurrentLanguage(savedLanguage);
+          } else {
+            console.log('I18n: Ignoring saved language because it was not manually set. Using device locale.');
+          }
         }
       } catch (error) {
         console.error('Error loading language:', error);
@@ -34,6 +51,7 @@ export const I18nProvider = ({ children }) => {
   const changeLanguage = async (newLanguage) => {
     try {
       await AsyncStorage.setItem('language', newLanguage);
+      await AsyncStorage.setItem('language_manually_set', 'true');
       setCurrentLanguage(newLanguage);
     } catch (error) {
       console.error('Error saving language:', error);

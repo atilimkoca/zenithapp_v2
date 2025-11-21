@@ -8,11 +8,22 @@ const padNumber = (value) => value.toString().padStart(2, '0');
 
 const parseDateKey = (key) => {
   if (!key) return null;
-  const [year, month, day] = key.split('-').map(Number);
-  if ([year, month, day].some((part) => Number.isNaN(part))) {
-    return null;
+
+  // Try standard YYYY-MM-DD
+  if (typeof key === 'string' && key.includes('-')) {
+    const parts = key.split('-').map(Number);
+    if (parts.length === 3 && !parts.some(Number.isNaN)) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
   }
-  return new Date(year, month - 1, day);
+
+  // Try parsing as standard Date
+  const date = new Date(key);
+  if (!Number.isNaN(date.getTime())) {
+    return date;
+  }
+
+  return null;
 };
 
 const buildItems = (dates, locale) => {
@@ -25,7 +36,13 @@ const buildItems = (dates, locale) => {
   return sorted.map((key) => {
     const dateInstance = parseDateKey(key);
     if (!dateInstance) {
-      return null;
+      return {
+        key,
+        value: key,
+        dayLabel: typeof key === 'string' ? key.toUpperCase().slice(0, 6) : 'DATE',
+        dateNumber: '',
+        isWeekend: false,
+      };
     }
 
     const dayLabel = dateInstance
@@ -93,6 +110,9 @@ export default function DateCarouselPicker({
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        scrollEnabled={true}
+        nestedScrollEnabled={true}
+        style={{ width: '100%' }}
       >
         {items.map((item) => {
           const isSelected = selectedDate === item.value;
@@ -155,6 +175,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 8,
     marginBottom: 16,
+    minHeight: 70,
     ...colors.shadow,
   },
   containerLight: {
