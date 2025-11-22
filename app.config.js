@@ -4,7 +4,7 @@ export default ({ config }) => ({
   slug: config.slug || 'zenith-studio',
   version: '1.0.0',
   orientation: 'portrait',
-  icon: './assets/zenith_logo_rounded.png',
+  icon: './assets/app_icon.jpeg',
   userInterfaceStyle: 'light',
   splash: {
     image: './assets/splash-icon.png',
@@ -27,7 +27,7 @@ export default ({ config }) => ({
     ...config.android,
     package: 'com.zenithstudio.app', // ⚠️ TODO: Change this to match ios.bundleIdentifier
     adaptiveIcon: {
-      foregroundImage: './assets/zenith_logo_rounded.png',
+      foregroundImage: './assets/app_icon.jpeg',
       backgroundColor: '#ffffff'
     }
   },
