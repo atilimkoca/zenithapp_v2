@@ -1,13 +1,15 @@
+import 'dotenv/config';
+
 export default ({ config }) => ({
   ...config,
   name: 'Zenith Studio',
   slug: config.slug || 'zenith-studio',
-  version: '1.0.1',
+  version: '1.0.0',
   orientation: 'portrait',
   icon: './assets/app_icon.jpeg',
   userInterfaceStyle: 'light',
   splash: {
-    image: './assets/splash-icon.png',
+    image: './assets/zenith_logo_rounded.png',
     resizeMode: 'contain',
     backgroundColor: '#ffffff'
   },
@@ -17,7 +19,7 @@ export default ({ config }) => ({
   ios: {
     ...config.ios,
     bundleIdentifier: 'com.zenithstudio.app', // ⚠️ TODO: Change this to your unique Bundle Identifier (e.g. com.yourname.zenith)
-    buildNumber: '4',
+    buildNumber: '5',
     supportsTablet: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -33,6 +35,13 @@ export default ({ config }) => ({
   },
   extra: {
     ...config.extra,
+    firebaseApiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+    firebaseAuthDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    firebaseProjectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+    firebaseStorageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    firebaseMessagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    firebaseAppId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+    firebaseMeasurementId: process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
     eas: {
       projectId: "d7b5a634-7217-4b45-87ed-014353391df5"
     }

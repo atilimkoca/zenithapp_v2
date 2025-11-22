@@ -36,7 +36,8 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
-    "babel-preset-expo": "~54.0.1"
+    "babel-preset-expo": "~54.0.1",
+    "dotenv": "^17.2.3"
   },
   "private": true,
   "overrides": {
