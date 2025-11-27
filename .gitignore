@@ -95,3 +95,6 @@ Thumbs.db
 # Log files
 *.log
 logs/
+# Native folders (using Prebuild)
+/ios
+/android
