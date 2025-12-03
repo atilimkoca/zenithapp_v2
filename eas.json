@@ -8,20 +8,23 @@
       "distribution": "internal",
       "node": "20.19.4",
       "ios": {
-        "resourceClass": "m1-medium"
+        "resourceClass": "m-medium",
+        "image": "latest"
       }
     },
     "preview": {
       "distribution": "internal",
       "node": "20.19.4",
       "ios": {
-        "resourceClass": "m1-medium"
+        "resourceClass": "m-medium",
+        "image": "latest"
       }
     },
     "production": {
       "node": "20.19.4",
       "ios": {
-        "resourceClass": "m1-medium"
+        "resourceClass": "m-medium",
+        "image": "latest"
       }
     }
   },
