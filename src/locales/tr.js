@@ -115,6 +115,18 @@ export default {
     accountPendingMessage: 'Hesabınız admin onayı bekliyor. Onaylandıktan sonra tam erişim sağlayabileceksiniz.',
     accountRejectedMessage: 'Hesabınız reddedilmiş. Daha fazla bilgi için lütfen bizimle iletişime geçin.',
     accountDeletedMessage: 'Bu hesap artık mevcut değil. Lütfen yeniden kayıt olun.',
+
+    // Account Deletion
+    deleteAccount: 'Hesabı Sil',
+    deleteAccountDescription: 'Hesabınızı ve tüm verilerinizi kalıcı olarak silin',
+    deleteAccountTitle: 'Hesabı Sil',
+    deleteAccountConfirm: 'Hesabınızı silmek istediğinizden emin misiniz? Bu işlem geri alınamaz ve tüm verileriniz kalıcı olarak silinecektir.',
+    deleteAccountWarning: 'Bu işlem kalıcı olarak silecek:\n• Profil bilgileriniz\n• Tüm ders rezervasyonlarınız\n• Ders kredileriniz\n• Tüm hesap verileriniz',
+    enterPasswordToDelete: 'Silme işlemini onaylamak için şifrenizi girin:',
+    deleteAccountButton: 'Hesabımı Sil',
+    deleting: 'Hesap siliniyor...',
+    accountDeleted: 'Hesabınız başarıyla silindi.',
+    requiresRecentLogin: 'Güvenlik nedeniyle, hesabınızı silmeden önce lütfen çıkış yapıp tekrar giriş yapın.',
   },
   
   // Profile
@@ -545,6 +557,7 @@ export default {
     logoutError: 'Çıkış yapılırken hata oluştu',
     loginFailed: 'Giriş başarısız',
     updateFailed: 'Güncelleme başarısız',
+    deleteAccountError: 'Hesabınız silinirken bir hata oluştu. Lütfen tekrar deneyin.',
   },
 
   // Camera and Photo

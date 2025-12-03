@@ -4,9 +4,12 @@ import {
   signOut,
   sendPasswordResetEmail,
   updateProfile,
-  onAuthStateChanged 
+  onAuthStateChanged,
+  deleteUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, deleteDoc, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 
 // Register new user
@@ -275,4 +278,90 @@ export const getCurrentUserData = async (uid) => {
 // Listen to authentication state changes
 export const onAuthStateChange = (callback) => {
   return onAuthStateChanged(auth, callback);
+};
+
+// Delete user account completely
+export const deleteUserAccount = async (password) => {
+  try {
+    const user = auth.currentUser;
+    
+    if (!user) {
+      return {
+        success: false,
+        messageKey: 'errors.userNotFound'
+      };
+    }
+
+    // Re-authenticate user before deletion (required by Firebase for sensitive operations)
+    const credential = EmailAuthProvider.credential(user.email, password);
+    await reauthenticateWithCredential(user, credential);
+
+    const uid = user.uid;
+
+    // Delete user data from Firestore
+    try {
+      // Delete main user document
+      await deleteDoc(doc(db, 'users', uid));
+
+      // Delete user's lesson bookings
+      const bookingsQuery = query(collection(db, 'bookings'), where('userId', '==', uid));
+      const bookingsSnapshot = await getDocs(bookingsQuery);
+      const batch = writeBatch(db);
+      bookingsSnapshot.docs.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+
+      // Delete user's notifications
+      try {
+        const notificationsQuery = query(collection(db, 'notifications'), where('userId', '==', uid));
+        const notificationsSnapshot = await getDocs(notificationsQuery);
+        const notifBatch = writeBatch(db);
+        notificationsSnapshot.docs.forEach(doc => {
+          notifBatch.delete(doc.ref);
+        });
+        await notifBatch.commit();
+      } catch (notifError) {
+        console.warn('Could not delete notifications:', notifError);
+      }
+
+    } catch (firestoreError) {
+      console.error('Firestore deletion error:', firestoreError);
+      // Continue with auth deletion even if Firestore fails
+    }
+
+    // Delete user from Firebase Authentication
+    await deleteUser(user);
+
+    return {
+      success: true,
+      messageKey: 'auth.accountDeleted'
+    };
+
+  } catch (error) {
+    console.error('Delete account error:', error);
+    
+    let messageKey = 'errors.deleteAccountError';
+    
+    switch (error.code) {
+      case 'auth/wrong-password':
+        messageKey = 'auth.wrongPassword';
+        break;
+      case 'auth/invalid-credential':
+        messageKey = 'auth.invalidCredentials';
+        break;
+      case 'auth/requires-recent-login':
+        messageKey = 'auth.requiresRecentLogin';
+        break;
+      case 'auth/network-request-failed':
+        messageKey = 'errors.networkError';
+        break;
+    }
+    
+    return {
+      success: false,
+      error: error.code,
+      messageKey: messageKey
+    };
+  }
 };

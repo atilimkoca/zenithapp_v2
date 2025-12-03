@@ -109,6 +109,18 @@
     accountPendingMessage: 'Your account is awaiting admin approval. You will have full access once approved.',
     accountRejectedMessage: 'Your account has been rejected. Please contact us for more information.',
     accountDeletedMessage: 'This account no longer exists. Please sign up again.',
+
+    // Account Deletion
+    deleteAccount: 'Delete Account',
+    deleteAccountDescription: 'Permanently delete your account and all data',
+    deleteAccountTitle: 'Delete Account',
+    deleteAccountConfirm: 'Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently deleted.',
+    deleteAccountWarning: 'This will permanently delete:\n• Your profile information\n• All your class bookings\n• Your lesson credits\n• All account data',
+    enterPasswordToDelete: 'Enter your password to confirm deletion:',
+    deleteAccountButton: 'Delete My Account',
+    deleting: 'Deleting account...',
+    accountDeleted: 'Your account has been successfully deleted.',
+    requiresRecentLogin: 'For security, please log out and log back in before deleting your account.',
   },
   
   // Profile
@@ -407,6 +419,7 @@
     logoutError: 'An error occurred while logging out',
     loginFailed: 'Login failed',
     updateFailed: 'Update failed',
+    deleteAccountError: 'An error occurred while deleting your account. Please try again.',
   },
 
   // Camera and Photo

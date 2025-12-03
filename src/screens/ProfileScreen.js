@@ -25,7 +25,7 @@ import { colors } from '../constants/colors';
 import { useAuth } from '../context/AuthContext';
 import { useI18n } from '../context/I18nContext';
 import { profileService } from '../services/profileService';
-import { logoutUser } from '../services/authService';
+import { logoutUser, deleteUserAccount } from '../services/authService';
 import UniqueHeader from '../components/UniqueHeader';
 import { lessonCreditsService } from '../services/lessonCreditsService';
 import NotificationScreen from './NotificationScreen';
@@ -38,6 +38,9 @@ export default function ProfileScreen({ navigation }) {
   const [modalVisible, setModalVisible] = useState(false);
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [notificationModalVisible, setNotificationModalVisible] = useState(false);
+  const [deleteAccountModalVisible, setDeleteAccountModalVisible] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
   const [userStats, setUserStats] = useState({
     totalLessons: 0,
     completedCount: 0,
@@ -336,6 +339,54 @@ export default function ProfileScreen({ navigation }) {
         },
       ]
     );
+  };
+
+  const handleDeleteAccountPress = () => {
+    Alert.alert(
+      t('auth.deleteAccountTitle'),
+      t('auth.deleteAccountConfirm') + '\n\n' + t('auth.deleteAccountWarning'),
+      [
+        {
+          text: t('cancel'),
+          style: 'cancel',
+        },
+        {
+          text: t('auth.deleteAccountButton'),
+          style: 'destructive',
+          onPress: () => {
+            setDeletePassword('');
+            setDeleteAccountModalVisible(true);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!deletePassword.trim()) {
+      Alert.alert(t('error'), t('auth.passwordRequired'));
+      return;
+    }
+
+    setDeletingAccount(true);
+    
+    try {
+      const result = await deleteUserAccount(deletePassword);
+      
+      if (result.success) {
+        setDeleteAccountModalVisible(false);
+        Alert.alert(t('success'), t('auth.accountDeleted'));
+        // Navigation will be handled by AuthContext when user is null
+      } else {
+        const errorMessage = result.messageKey ? t(result.messageKey) : t('errors.deleteAccountError');
+        Alert.alert(t('error'), errorMessage);
+      }
+    } catch (error) {
+      console.error('Delete account error:', error);
+      Alert.alert(t('error'), t('errors.deleteAccountError'));
+    } finally {
+      setDeletingAccount(false);
+    }
   };
 
   const handleLanguageSelect = async (languageCode) => {
@@ -745,6 +796,24 @@ export default function ProfileScreen({ navigation }) {
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.textLight} />
             </TouchableOpacity>
+
+            <View style={styles.settingDivider} />
+
+            {/* Delete Account Option */}
+            <TouchableOpacity 
+              style={styles.settingItem}
+              onPress={handleDeleteAccountPress}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.settingIconBox, { backgroundColor: colors.error + '15' }]}>
+                <Ionicons name="trash-outline" size={20} color={colors.error} />
+              </View>
+              <View style={styles.settingContent}>
+                <Text style={[styles.settingTitle, { color: colors.error }]}>{t('auth.deleteAccount')}</Text>
+                <Text style={styles.settingSubtitle}>{t('auth.deleteAccountDescription')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.textLight} />
+            </TouchableOpacity>
           </View>
 
           {/* Logout Button */}
@@ -978,6 +1047,65 @@ export default function ProfileScreen({ navigation }) {
                 ))}
               </View>
             </Animated.View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Delete Account Confirmation Modal */}
+      {deleteAccountModalVisible && (
+        <Modal
+          animationType="fade"
+          transparent={true}
+          visible={deleteAccountModalVisible}
+          onRequestClose={() => setDeleteAccountModalVisible(false)}
+        >
+          <View style={styles.deleteModalOverlay}>
+            <View style={styles.deleteModalContent}>
+              <View style={styles.deleteModalIcon}>
+                <Ionicons name="warning" size={48} color={colors.error} />
+              </View>
+              
+              <Text style={styles.deleteModalTitle}>{t('auth.deleteAccountTitle')}</Text>
+              <Text style={styles.deleteModalDescription}>
+                {t('auth.enterPasswordToDelete')}
+              </Text>
+              
+              <TextInput
+                style={styles.deleteModalInput}
+                placeholder={t('auth.password')}
+                placeholderTextColor={colors.textLight}
+                secureTextEntry
+                value={deletePassword}
+                onChangeText={setDeletePassword}
+                autoCapitalize="none"
+                editable={!deletingAccount}
+              />
+              
+              <View style={styles.deleteModalButtons}>
+                <TouchableOpacity
+                  style={styles.deleteModalCancelButton}
+                  onPress={() => {
+                    setDeleteAccountModalVisible(false);
+                    setDeletePassword('');
+                  }}
+                  disabled={deletingAccount}
+                >
+                  <Text style={styles.deleteModalCancelText}>{t('cancel')}</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[styles.deleteModalConfirmButton, deletingAccount && styles.deleteModalButtonDisabled]}
+                  onPress={handleDeleteAccount}
+                  disabled={deletingAccount}
+                >
+                  {deletingAccount ? (
+                    <ActivityIndicator size="small" color={colors.white} />
+                  ) : (
+                    <Text style={styles.deleteModalConfirmText}>{t('auth.deleteAccountButton')}</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
         </Modal>
       )}
@@ -1502,5 +1630,98 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: '400',
+  },
+
+  // Delete Account Modal Styles
+  deleteModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 24,
+  },
+  deleteModalContent: {
+    backgroundColor: colors.white,
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  deleteModalIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.error + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  deleteModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  deleteModalDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  deleteModalInput: {
+    width: '100%',
+    height: 50,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.background,
+    marginBottom: 20,
+  },
+  deleteModalButtons: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  deleteModalCancelButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  deleteModalCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  deleteModalConfirmButton: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.error,
+  },
+  deleteModalConfirmText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.white,
+  },
+  deleteModalButtonDisabled: {
+    opacity: 0.6,
   },
 });
