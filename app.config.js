@@ -18,16 +18,63 @@ export default ({ config }) => ({
   ],
   ios: {
     ...config.ios,
-    bundleIdentifier: 'com.zenithstudio.app', // ⚠️ TODO: Change this to your unique Bundle Identifier (e.g. com.yourname.zenith)
+    bundleIdentifier: 'com.zenithstudio.app',
     buildNumber: '6',
     supportsTablet: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
     },
+    privacyManifests: {
+      NSPrivacyAccessedAPITypes: [
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryFileTimestamp",
+          NSPrivacyAccessedAPITypeReasons: ["C617.1", "0A2A.1", "3B52.1"]
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryUserDefaults",
+          NSPrivacyAccessedAPITypeReasons: ["CA92.1"]
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategorySystemBootTime",
+          NSPrivacyAccessedAPITypeReasons: ["35F9.1"]
+        },
+        {
+          NSPrivacyAccessedAPIType: "NSPrivacyAccessedAPICategoryDiskSpace",
+          NSPrivacyAccessedAPITypeReasons: ["E174.1", "85F4.1"]
+        }
+      ],
+      NSPrivacyCollectedDataTypes: [
+        {
+          NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeName",
+          NSPrivacyCollectedDataTypeLinked: true,
+          NSPrivacyCollectedDataTypeTracking: false,
+          NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+        },
+        {
+          NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeEmailAddress",
+          NSPrivacyCollectedDataTypeLinked: true,
+          NSPrivacyCollectedDataTypeTracking: false,
+          NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+        },
+        {
+          NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypePhoneNumber",
+          NSPrivacyCollectedDataTypeLinked: true,
+          NSPrivacyCollectedDataTypeTracking: false,
+          NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+        },
+        {
+          NSPrivacyCollectedDataType: "NSPrivacyCollectedDataTypeUserID",
+          NSPrivacyCollectedDataTypeLinked: true,
+          NSPrivacyCollectedDataTypeTracking: false,
+          NSPrivacyCollectedDataTypePurposes: ["NSPrivacyCollectedDataTypePurposeAppFunctionality"]
+        }
+      ],
+      NSPrivacyTracking: false
+    }
   },
   android: {
     ...config.android,
-    package: 'com.zenithstudio.app', // ⚠️ TODO: Change this to match ios.bundleIdentifier
+    package: 'com.zenithstudio.app',
     adaptiveIcon: {
       foregroundImage: './assets/app_icon.jpeg',
       backgroundColor: '#ffffff'
