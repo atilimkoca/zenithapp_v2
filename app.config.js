@@ -75,10 +75,20 @@ export default ({ config }) => ({
   android: {
     ...config.android,
     package: 'com.zenithstudio.app',
+    versionCode: 1,
     adaptiveIcon: {
       foregroundImage: './assets/app_icon.jpeg',
       backgroundColor: '#ffffff'
-    }
+    },
+    permissions: [
+      "android.permission.INTERNET",
+      "android.permission.VIBRATE",
+      "android.permission.RECEIVE_BOOT_COMPLETED",
+      "android.permission.READ_EXTERNAL_STORAGE",
+      "android.permission.WRITE_EXTERNAL_STORAGE",
+      "android.permission.CAMERA"
+    ],
+    googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json"
   },
   extra: {
     ...config.extra,

@@ -72,6 +72,8 @@ web-build/
 .firebase/
 *-debug.log
 .runtimeconfig.json
+google-services.json
+google-play-service-account.json
 
 # OS generated files
 .DS_Store

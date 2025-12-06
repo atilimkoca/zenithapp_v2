@@ -11,6 +11,10 @@
         "resourceClass": "m-medium",
         "image": "latest"
       },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      },
       "env": {
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyC6FKMNQ_rPfquTGlX6my6Uzl1f8DX-NAE",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "zenithstudio-97468.firebaseapp.com",
@@ -27,6 +31,9 @@
         "resourceClass": "m-medium",
         "image": "latest"
       },
+      "android": {
+        "buildType": "apk"
+      },
       "env": {
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyC6FKMNQ_rPfquTGlX6my6Uzl1f8DX-NAE",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "zenithstudio-97468.firebaseapp.com",
@@ -42,6 +49,10 @@
         "resourceClass": "m-medium",
         "image": "latest"
       },
+      "android": {
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:bundleRelease"
+      },
       "env": {
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyC6FKMNQ_rPfquTGlX6my6Uzl1f8DX-NAE",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "zenithstudio-97468.firebaseapp.com",
@@ -53,6 +64,11 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "./google-play-service-account.json",
+        "track": "internal"
+      }
+    }
   }
 }
