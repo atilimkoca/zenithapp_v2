@@ -10,6 +10,14 @@
       "ios": {
         "resourceClass": "m-medium",
         "image": "latest"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyC6FKMNQ_rPfquTGlX6my6Uzl1f8DX-NAE",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "zenithstudio-97468.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "zenithstudio-97468",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "zenithstudio-97468.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "179316789546",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:179316789546:web:2bf32cdfd1b2dce4fe8e53"
       }
     },
     "preview": {
@@ -18,6 +26,14 @@
       "ios": {
         "resourceClass": "m-medium",
         "image": "latest"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyC6FKMNQ_rPfquTGlX6my6Uzl1f8DX-NAE",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "zenithstudio-97468.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "zenithstudio-97468",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "zenithstudio-97468.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "179316789546",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:179316789546:web:2bf32cdfd1b2dce4fe8e53"
       }
     },
     "production": {
@@ -25,6 +41,14 @@
       "ios": {
         "resourceClass": "m-medium",
         "image": "latest"
+      },
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyC6FKMNQ_rPfquTGlX6my6Uzl1f8DX-NAE",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "zenithstudio-97468.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "zenithstudio-97468",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "zenithstudio-97468.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "179316789546",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:179316789546:web:2bf32cdfd1b2dce4fe8e53"
       }
     }
   },
