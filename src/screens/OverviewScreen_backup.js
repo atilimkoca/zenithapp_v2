@@ -137,7 +137,7 @@ export default function OverviewScreen() {
             <View style={styles.studioCard}>
               <View style={styles.studioHeader}>
                 <Image 
-                  source={require('../../assets/zenith_logo_rounded.jpeg')}
+                  source={require('../../assets/zenith_logo_rounded.png')}
                   style={styles.studioLogo}
                 />
                 <View style={styles.studioInfo}>

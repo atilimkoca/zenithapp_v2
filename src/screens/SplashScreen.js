@@ -54,7 +54,7 @@ export default function SplashScreen({ navigation }) {
       >
         <View style={styles.logoContainer}>
           <Image 
-            source={require('../../assets/zenith_logo_rounded.jpeg')}
+            source={require('../../assets/zenith_logo_rounded.png')}
             style={styles.logo}
             resizeMode="contain"
           />

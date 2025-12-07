@@ -88,8 +88,11 @@ export default ({ config }) => ({
       "android.permission.WRITE_EXTERNAL_STORAGE",
       "android.permission.CAMERA"
     ],
-    googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json"
+    googleServicesFile: process.env.GOOGLE_SERVICES_JSON
   },
+  plugins: [
+    "expo-localization"
+  ],
   extra: {
     ...config.extra,
     firebaseApiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,

@@ -100,7 +100,7 @@ export default function PendingApprovalScreen() {
             <View style={styles.header}>
               <View style={styles.logoContainer}>
                 <Image 
-                  source={require('../../assets/zenith_logo_rounded.jpeg')}
+                  source={require('../../assets/zenith_logo_rounded.png')}
                   style={styles.logo}
                   resizeMode="contain"
                 />
