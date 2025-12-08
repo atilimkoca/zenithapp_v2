@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   RefreshControl,
   Animated,
   Dimensions,
+  InteractionManager,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -93,36 +94,6 @@ const getLessonAccessType = (lesson) => {
   return 'group';
 };
 
-const formatDateKey = (value) => {
-  if (!value) return null;
-
-  if (value && typeof value === 'object' && value.date instanceof Date) {
-    value = value.date;
-  }
-
-  let dateInstance = null;
-
-  if (typeof value === 'string') {
-    dateInstance = new Date(value);
-  } else if (value instanceof Date) {
-    dateInstance = value;
-  } else if (value?.seconds) {
-    dateInstance = new Date(value.seconds * 1000);
-  } else if (typeof value?.toDate === 'function') {
-    dateInstance = value.toDate();
-  }
-
-  if (!dateInstance || Number.isNaN(dateInstance.getTime())) {
-    return null;
-  }
-
-  const year = dateInstance.getFullYear();
-  const month = `${dateInstance.getMonth() + 1}`.padStart(2, '0');
-  const day = `${dateInstance.getDate()}`.padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-};
-
 const formatHoursForLanguage = (hours, language) => {
   if (hours === null || hours === undefined || Number.isNaN(hours)) {
     return '0';
@@ -135,23 +106,164 @@ const formatHoursForLanguage = (hours, language) => {
   return formatted;
 };
 
+// Memoized lesson card component to prevent unnecessary re-renders
+const LessonCard = React.memo(({ lesson, userId, onBook, onCancel, t }) => {
+  const categoryInfo = lesson.lessonTypeInfo || getCategoryInfo(lesson.title);
+  const isFullyBooked = lesson.currentParticipants >= lesson.maxParticipants;
+  const isUserBooked = lesson.participants && lesson.participants.includes(userId);
+
+  const now = Date.now();
+  const lessonDateTime = new Date(lesson.scheduledDate).getTime();
+  const timeUntilLesson = lessonDateTime - now;
+  const twoHoursInMs = 2 * 60 * 60 * 1000;
+  const eightHoursInMs = 8 * 60 * 60 * 1000;
+  const isTooLateToBook = timeUntilLesson <= twoHoursInMs && timeUntilLesson > 0;
+  const canCancelBooking = isUserBooked && timeUntilLesson >= eightHoursInMs;
+
+  const buttonMode = isUserBooked && canCancelBooking ? 'cancel' :
+    isUserBooked ? 'booked' :
+    isTooLateToBook ? 'tooLate' :
+    isFullyBooked ? 'full' : 'book';
+
+  const buttonDisabled = ['full', 'tooLate', 'booked'].includes(buttonMode);
+  const isMutedDisabled = ['full', 'tooLate'].includes(buttonMode);
+
+  const buttonConfig = {
+    cancel: { gradient: [colors.error, colors.error + 'CC'], icon: 'close-circle-outline', label: t('classes.cancel') || 'İptal Et' },
+    booked: { gradient: [colors.success, colors.success + 'DD'], icon: 'checkmark-circle-outline', label: t('classSelection.bookedButton') || 'Rezerve Edildi' },
+    tooLate: { gradient: [colors.warning, colors.warning + 'CC'], icon: 'time-outline', label: t('classSelection.tooLateButton') || 'Çok Geç' },
+    full: { gradient: [colors.lightGray, colors.gray], icon: 'close-circle-outline', label: t('classSelection.fullButton') || 'Dolu' },
+    book: { gradient: [colors.primary, colors.primaryDark], icon: 'add-circle-outline', label: t('classSelection.bookButton') || 'Rezerve Et' },
+  };
+
+  const { gradient: buttonGradient, icon: buttonIcon, label: buttonLabel } = buttonConfig[buttonMode];
+  const capacityPercentage = (lesson.currentParticipants / lesson.maxParticipants) * 100;
+
+  return (
+    <View style={[styles.classCard, isFullyBooked && styles.classCardDisabled]}>
+      <LinearGradient
+        colors={isFullyBooked ? [colors.gray, colors.lightGray] : [colors.white, colors.white + 'F8']}
+        style={styles.cardGradient}
+      >
+        <View style={styles.classHeader}>
+          <View style={styles.classMainInfo}>
+            <View style={styles.classTitleRow}>
+              <View style={[styles.categoryIconSmall, { backgroundColor: (categoryInfo.color || colors.primary) + '15' }]}>
+                <Ionicons name={categoryInfo.icon || 'fitness-outline'} size={16} color={categoryInfo.color || colors.primary} />
+              </View>
+              <View style={styles.classNameContainer}>
+                <Text style={styles.className}>{lesson.title}</Text>
+              </View>
+            </View>
+            <View style={styles.trainerInfo}>
+              <View style={styles.trainerAvatar}>
+                <Ionicons name="person" size={16} color={colors.primary} />
+              </View>
+              <View style={styles.trainerDetails}>
+                <Text style={styles.trainerName}>🧘‍♀️ {lesson.instructor}</Text>
+                <Text style={styles.trainerTitle}>
+                  {lesson.trainerSpecializations?.length > 0 ? lesson.trainerSpecializations[0] : ''}
+                </Text>
+                {lesson.trainerActive === false && (
+                  <Text style={[styles.trainerTitle, { color: colors.warning }]}>⚠️ Pasif Eğitmen</Text>
+                )}
+              </View>
+            </View>
+          </View>
+          {isFullyBooked ? (
+            <View style={styles.fullBadge}>
+              <Text style={styles.fullBadgeText}>{t('classSelection.fullBadge') || 'DOLU'}</Text>
+            </View>
+          ) : (
+            <View style={[styles.availableBadge, { backgroundColor: colors.success + '15' }]}>
+              <Text style={[styles.availableBadgeText, { color: colors.success }]}>{t('classSelection.availableBadge') || 'MÜSAİT'}</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.classDetails}>
+          <View style={styles.detailsRow}>
+            <View style={styles.detailItem}>
+              <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.detailText}>{lesson.formattedTime}</Text>
+              <View style={styles.durationBadge}>
+                <Text style={styles.durationText}>{lesson.duration}{t('classSelection.minutesShort') || 'dk'}</Text>
+              </View>
+            </View>
+          </View>
+          <View style={styles.detailsRow}>
+            <View style={styles.detailItem}>
+              <Ionicons name="people-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.detailText}>
+                {lesson.currentParticipants}/{lesson.maxParticipants} {t('classSelection.people') || 'kişi'}
+              </Text>
+              <View style={styles.capacityBarContainer}>
+                <View style={styles.capacityBar}>
+                  <View
+                    style={[
+                      styles.capacityFill,
+                      {
+                        width: `${capacityPercentage}%`,
+                        backgroundColor: isFullyBooked ? colors.error : capacityPercentage > 80 ? colors.warning : colors.success
+                      }
+                    ]}
+                  />
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.classFooter}>
+          <View style={styles.leftFooter}>
+            <View style={[styles.levelBadge, { backgroundColor: '#38a169' + '15', marginRight: 8 }]}>
+              <Text style={[styles.levelText, { color: '#38a169' }]}>
+                {lesson.type || lesson.lessonTypeInfo?.name || t('classSelection.general') || 'Genel'}
+              </Text>
+            </View>
+            <View style={[styles.levelBadge, { backgroundColor: (lesson.statusColor || '#F59E0B') + '15' }]}>
+              <Text style={[styles.levelText, { color: lesson.statusColor || '#F59E0B' }]}>
+                {lesson.statusLevel || t('classSelection.intermediate') || 'Orta'}
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={[styles.bookButton, buttonDisabled && styles.bookButtonDisabled]}
+            onPress={() => buttonMode === 'cancel' ? onCancel(lesson) : buttonMode === 'book' ? onBook(lesson) : null}
+            disabled={buttonDisabled}
+          >
+            <LinearGradient colors={buttonGradient} style={styles.bookButtonGradient}>
+              <Ionicons name={buttonIcon} size={18} color={isMutedDisabled ? colors.textSecondary : colors.white} />
+              <Text style={[styles.bookButtonText, isMutedDisabled && styles.bookButtonTextDisabled]}>{buttonLabel}</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </LinearGradient>
+    </View>
+  );
+});
+
 export default function ClassSelectionScreen() {
   const { user, userData } = useAuth();
   const { t, language: currentLanguage } = useI18n();
-  const [lessons, setLessons] = useState([]);
-  const [groupedLessons, setGroupedLessons] = useState([]);
-  const [filteredGroupedLessons, setFilteredGroupedLessons] = useState([]);
-  const [trainers, setTrainers] = useState([]);
-  const [lessonTypes, setLessonTypes] = useState([]);
+
+  // Available dates (lightweight)
+  const [availableDates, setAvailableDates] = useState([]);
+  // Current day's lessons
+  const [currentDayLessons, setCurrentDayLessons] = useState([]);
+  const [filteredLessons, setFilteredLessons] = useState([]);
+
   const [loading, setLoading] = useState(true);
+  const [loadingLessons, setLoadingLessons] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [selectedDateKey, setSelectedDateKey] = useState(null);
   const [notificationModalVisible, setNotificationModalVisible] = useState(false);
-  const scrollY = new Animated.Value(0);
-  const hasManuallySelectedDate = useRef(false);
-  
-  const formatDisplayDate = (value) => {
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const loadedDatesRef = useRef(new Set()); // Track which dates have been loaded
+
+  const formatDisplayDate = useCallback((value) => {
     if (!value) return '';
 
     let date;
@@ -184,217 +296,149 @@ export default function ClassSelectionScreen() {
         return date.toDateString();
       }
     }
-  };
+  }, [currentLanguage]);
 
+  // Load available dates first (lightweight)
+  const loadAvailableDates = useCallback(async (forceRefresh = false) => {
+    try {
+      const result = await lessonService.getAvailableDates(forceRefresh);
+      if (result.success && result.dates.length > 0) {
+        setAvailableDates(result.dates);
+        // Auto-select first date if none selected
+        if (!selectedDateKey) {
+          setSelectedDateKey(result.dates[0]);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading available dates:', error);
+    }
+  }, [selectedDateKey]);
 
+  // Load lessons for a specific date
+  const loadLessonsForDate = useCallback(async (dateKey) => {
+    if (!dateKey) return;
+
+    setLoadingLessons(true);
+    try {
+      const result = await lessonService.getLessonsByDate(dateKey);
+      if (result.success) {
+        // Add formatted date to each lesson
+        const lessonsWithFormattedDate = result.lessons.map(lesson => ({
+          ...lesson,
+          formattedDate: formatDisplayDate(lesson.scheduledDate),
+        }));
+        setCurrentDayLessons(lessonsWithFormattedDate);
+        loadedDatesRef.current.add(dateKey);
+      }
+    } catch (error) {
+      console.error('Error loading lessons for date:', error);
+    } finally {
+      setLoadingLessons(false);
+    }
+  }, [formatDisplayDate]);
+
+  // Initial load - get dates first, then load first day's lessons
   useEffect(() => {
-    loadLessons();
+    const interactionPromise = InteractionManager.runAfterInteractions(async () => {
+      try {
+        const result = await lessonService.getAvailableDates();
+        if (result.success && result.dates.length > 0) {
+          setAvailableDates(result.dates);
+          const firstDate = result.dates[0];
+          setSelectedDateKey(firstDate);
+          await loadLessonsForDate(firstDate);
+        }
+      } catch (error) {
+        console.error('Error in initial load:', error);
+      } finally {
+        setLoading(false);
+      }
+    });
+    return () => interactionPromise.cancel();
   }, []);
 
+  // Load lessons when selected date changes
   useEffect(() => {
-    filterLessons();
-  }, [groupedLessons, searchQuery, userData, selectedDateKey]);
+    if (selectedDateKey && !loading) {
+      loadLessonsForDate(selectedDateKey);
+    }
+  }, [selectedDateKey, loading, loadLessonsForDate]);
 
-  const availableDateKeys = useMemo(() => {
-    const uniqueKeys = new Set();
-    const addKey = (value) => {
-      const directKey = formatDateKey(value);
-      if (directKey) {
-        uniqueKeys.add(directKey);
-      }
-    };
-
-    groupedLessons.forEach(group => {
-      addKey(group.date);
-      addKey(group.originalDate);
-    });
-
-    lessons.forEach(lesson => {
-      addKey(lesson.scheduledDate);
-      addKey(lesson.originalDate);
-      addKey(lesson.date);
-    });
-
-    return Array.from(uniqueKeys).sort();
-  }, [groupedLessons, lessons]);
-
+  // Debounce search query
   useEffect(() => {
-    if (availableDateKeys.length === 0) {
-      if (selectedDateKey !== null) {
-        setSelectedDateKey(null);
-      }
+    const timeoutId = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  // Filter lessons based on search and user package type
+  useEffect(() => {
+    if (currentDayLessons.length === 0) {
+      setFilteredLessons([]);
       return;
     }
 
-    setSelectedDateKey(prev => {
-      const prevIsValid = prev && availableDateKeys.includes(prev);
-      if (prevIsValid) {
-        return prev;
-      }
+    let filtered = [...currentDayLessons];
 
-      if (hasManuallySelectedDate.current) {
-        return null;
-      }
+    // Filter by user's package type
+    const rawPackageType = userData?.packageInfo?.packageType;
+    if (rawPackageType) {
+      const normalizedUserPackageType = normalizePackageType(rawPackageType);
+      const userAccessType = normalizedUserPackageType === 'one-on-one' ? 'one-on-one' : 'group';
 
-      return availableDateKeys[0];
-    });
-  }, [availableDateKeys, selectedDateKey]);
+      filtered = filtered.filter(lesson => {
+        const lessonAccessType = getLessonAccessType(lesson);
+        return userAccessType === 'one-on-one'
+          ? lessonAccessType === 'one-on-one'
+          : lessonAccessType !== 'one-on-one';
+      });
+    }
 
-  // Re-format dates when language changes
+    // Filter by search query
+    if (debouncedSearchQuery.trim()) {
+      const query = debouncedSearchQuery.toLowerCase();
+      filtered = filtered.filter(lesson =>
+        lesson.title.toLowerCase().includes(query) ||
+        lesson.instructor?.toLowerCase().includes(query) ||
+        lesson.type?.toLowerCase().includes(query)
+      );
+    }
+
+    setFilteredLessons(filtered);
+  }, [currentDayLessons, userData?.packageInfo?.packageType, debouncedSearchQuery]);
+
+  // Use availableDates directly instead of computing from lessons
+  const availableDateKeys = useMemo(() => availableDates, [availableDates]);
+
+  // Re-format current day lessons when language changes
+  const prevLanguageRef = useRef(currentLanguage);
   useEffect(() => {
-    if (lessons.length > 0) {
-      const lessonsWithFormattedDates = lessons.map(lesson => ({
+    if (prevLanguageRef.current === currentLanguage) return;
+    prevLanguageRef.current = currentLanguage;
+
+    if (currentDayLessons.length > 0) {
+      setCurrentDayLessons(prevLessons => prevLessons.map(lesson => ({
         ...lesson,
-        formattedDate: formatDisplayDate(lesson.originalDate || lesson.scheduledDate),
-      }));
-      setLessons(lessonsWithFormattedDates);
+        formattedDate: formatDisplayDate(lesson.scheduledDate),
+      })));
     }
-    
-    if (groupedLessons.length > 0) {
-      const groupedWithFormattedDates = groupedLessons.map(group => ({
-        ...group,
-        formattedDate: formatDisplayDate(group.originalDate || group.date),
-        lessons: (group.lessons || []).map(lesson => ({
-          ...lesson,
-          formattedDate: formatDisplayDate(lesson.originalDate || lesson.scheduledDate),
-        })),
-      }));
-      setGroupedLessons(groupedWithFormattedDates);
-    }
-  }, [currentLanguage]);
-
-  const loadLessons = async () => {
-    try {
-      const result = await lessonService.getAllLessons();
-      if (result.success) {
-        console.log('✅ Lessons loaded:', {
-          lessons: result.lessons.length,
-          trainers: result.trainers?.length || 0,
-          lessonTypes: result.lessonTypes?.length || 0
-        });
-        
-        const lessonsWithFormattedDates = (result.lessons || []).map(lesson => ({
-          ...lesson,
-          originalDate: lesson.formattedDate || lesson.scheduledDate, // Store original date
-          formattedDate: formatDisplayDate(lesson.formattedDate || lesson.scheduledDate),
-        }));
-
-        const groupedWithFormattedDates = (result.groupedLessons || []).map(group => ({
-          ...group,
-          originalDate: group.formattedDate || group.date, // Store original date
-          formattedDate: formatDisplayDate(group.formattedDate || group.date),
-          lessons: (group.lessons || []).map(lesson => ({
-            ...lesson,
-            originalDate: lesson.formattedDate || lesson.scheduledDate, // Store original date
-            formattedDate: formatDisplayDate(lesson.formattedDate || lesson.scheduledDate),
-          })),
-        }));
-
-        setLessons(lessonsWithFormattedDates);
-        setGroupedLessons(groupedWithFormattedDates);
-
-        // Set trainers and lesson types from Firebase
-        if (result.trainers) {
-          setTrainers(result.trainers);
-        }
-        
-        if (result.lessonTypes) {
-          setLessonTypes(result.lessonTypes);
-        }
-      } else {
-        Alert.alert(t('general.error') || 'Hata', result.message);
-      }
-    } catch (error) {
-      console.error('Error loading lessons:', error);
-      Alert.alert(t('general.error') || 'Hata', t('classSelection.loadingError') || 'Dersler yüklenirken bir hata oluştu.');
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [currentLanguage, currentDayLessons.length, formatDisplayDate]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadLessons();
+    await loadAvailableDates(true);
+    if (selectedDateKey) {
+      await loadLessonsForDate(selectedDateKey);
+    }
     setRefreshing(false);
   };
 
   const handleSelectDate = (value) => {
-    hasManuallySelectedDate.current = true;
     setSelectedDateKey(value);
   };
 
-  const filterLessons = () => {
-    // Debug logging
-    console.log('🔍 Filter Debug - User package info:', {
-      hasUser: !!user,
-      hasUserData: !!userData,
-      hasPackageInfo: !!userData?.packageInfo,
-      packageType: userData?.packageInfo?.packageType,
-      packageName: userData?.packageInfo?.packageName,
-      fullPackageInfo: userData?.packageInfo,
-      selectedDateKey,
-      normalizedType: normalizePackageType(userData?.packageInfo?.packageType)
-    });
-
-    let filteredGroups = groupedLessons.map(group => {
-      if (selectedDateKey) {
-        const groupDateKey = formatDateKey(
-          group.date ||
-          group.originalDate ||
-          (group.lessons?.[0]?.scheduledDate || group.lessons?.[0]?.originalDate)
-        );
-        if (groupDateKey !== selectedDateKey) {
-          return {
-            ...group,
-            lessons: []
-          };
-        }
-      }
-
-      let filteredLessonsInGroup = group.lessons;
-
-      // Filter by user's specific package type
-      const rawPackageType = userData?.packageInfo?.packageType;
-      if (rawPackageType) {
-        const normalizedUserPackageType = normalizePackageType(rawPackageType);
-        const userAccessType = normalizedUserPackageType === 'one-on-one' ? 'one-on-one' : 'group';
-        console.log(`📦 Filtering lessons for package type: "${rawPackageType}" (normalized: "${userAccessType}")`);
-
-        filteredLessonsInGroup = filteredLessonsInGroup.filter(lesson => {
-          const lessonAccessType = getLessonAccessType(lesson);
-          const shouldInclude = userAccessType === 'one-on-one'
-            ? lessonAccessType === 'one-on-one'
-            : lessonAccessType !== 'one-on-one';
-          
-          console.log(`   📋 Checking lesson: "${lesson.title}" access "${lessonAccessType}" -> ${shouldInclude ? 'include' : 'skip'}`);
-          return shouldInclude;
-        });
-      } else {
-        console.log('⚠️ No package type found - showing all lessons');
-      }
-
-      // Filter by search query (search in title and instructor name)
-      if (searchQuery.trim()) {
-        filteredLessonsInGroup = filteredLessonsInGroup.filter(lesson =>
-          lesson.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          lesson.instructor?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          lesson.type?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-      }
-
-      return {
-        ...group,
-        lessons: filteredLessonsInGroup
-      };
-    });
-
-    // Remove empty groups
-    filteredGroups = filteredGroups.filter(group => group.lessons.length > 0);
-
-    setFilteredGroupedLessons(filteredGroups);
-  };
-
-  // Helper functions for mock data
+  // Helper functions for booking
   const handleBookClass = async (lesson) => {
     if (!user) {
       Alert.alert(t('general.error') || 'Hata', t('classSelection.loginRequired') || 'Rezervasyon yapmak için giriş yapmanız gerekiyor.');
@@ -429,7 +473,7 @@ export default function ClassSelectionScreen() {
                 t('classSelection.bookingSuccess') || 'Başarılı! 🎉', 
                 result.messageKey ? t(result.messageKey) : result.message
               );
-              loadLessons(); // Refresh the lessons
+              loadLessonsForDate(selectedDateKey); // Refresh the lessons for current date
             } else {
               Alert.alert(
                 t('general.error') || 'Hata', 
@@ -475,7 +519,7 @@ export default function ClassSelectionScreen() {
                   t('success') || 'Başarılı',
                   result.messageKey ? t(result.messageKey) : result.message || (t('classes.cancelSuccessMessage') || 'Ders rezervasyonunuz başarıyla iptal edildi.')
                 );
-                await loadLessons();
+                await loadLessonsForDate(selectedDateKey);
               } else {
                 let errorMessage;
                 if (result.messageKey === 'classes.cancelTooLate') {
@@ -506,39 +550,6 @@ export default function ClassSelectionScreen() {
     );
   };
 
-  const getLevelColor = (level) => {
-    switch (level?.toLowerCase()) {
-      case 'beginner':
-      case 'başlangıç':
-        return colors.success;
-      case 'intermediate':
-      case 'orta':
-        return colors.warning;
-      case 'advanced':
-      case 'ileri':
-        return colors.error;
-      default:
-        return colors.primary;
-    }
-  };
-
-  const getLevelText = (level) => {
-    switch (level?.toLowerCase()) {
-      case 'beginner': 
-      case 'başlangıç': 
-        return t('classSelection.beginner') || 'Başlangıç';
-      case 'intermediate': 
-      case 'orta': 
-        return t('classSelection.intermediate') || 'Orta';
-      case 'advanced': 
-      case 'ileri': 
-      case 'İleri': 
-        return t('classSelection.advanced') || 'İleri';
-      default: 
-        return t('classSelection.general') || level || 'Genel';
-    }
-  };
-
   if (loading) {
     return (
       <View style={styles.container}>
@@ -546,7 +557,7 @@ export default function ClassSelectionScreen() {
           title={t('classSelection.title') || "Yoga Dersleri"} 
           subtitle={t('classSelection.loadingLessons') || "Dersler yükleniyor..."} 
           rightIcon="refresh"
-          onRightPress={loadLessons}
+          onRightPress={onRefresh}
         />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -620,299 +631,56 @@ export default function ClassSelectionScreen() {
               </View>
               <View style={styles.resultsCountBadge}>
                 <Text style={styles.resultsCount}>
-                  {filteredGroupedLessons.reduce((total, group) => total + group.lessons.length, 0)}
+                  {filteredLessons.length}
                 </Text>
               </View>
             </View>
-            
-            {filteredGroupedLessons.length === 0 ? (
+
+            {loadingLessons ? (
+              <View style={styles.loadingLessonsContainer}>
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text style={styles.loadingLessonsText}>{t('classSelection.loadingDayLessons') || 'Dersler yükleniyor...'}</Text>
+              </View>
+            ) : filteredLessons.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <View style={styles.emptyIconContainer}>
                   <Ionicons name="calendar-outline" size={48} color={colors.textSecondary} />
                 </View>
                 <Text style={styles.emptyTitle}>{t('classSelection.noLessonsFound') || 'Ders bulunamadı'}</Text>
                 <Text style={styles.emptyText}>
-                  {searchQuery ? (t('classSelection.noLessonsDescription') || 'Arama kriterlerinize uygun ders bulunmuyor.') : (t('classSelection.noActiveLessons') || 'Henüz aktif ders bulunmuyor.')}
+                  {searchQuery ? (t('classSelection.noLessonsDescription') || 'Arama kriterlerinize uygun ders bulunmuyor.') : (t('classSelection.noActiveLessons') || 'Bu tarihte aktif ders bulunmuyor.')}
                 </Text>
               </View>
             ) : (
-              filteredGroupedLessons.map((dateGroup, groupIndex) => (
-                <Animated.View 
-                  key={dateGroup.date} 
-                  style={[
-                    styles.dateGroup,
-                    {
-                      opacity: scrollY.interpolate({
-                        inputRange: [0, 100 * (groupIndex + 1)],
-                        outputRange: [1, 0.95],
-                        extrapolate: 'clamp',
-                      })
-                    }
-                  ]}
+              <View style={styles.dateGroup}>
+                {/* Date Header for selected day */}
+                <LinearGradient
+                  colors={[colors.primary + '08', colors.primary + '05']}
+                  style={styles.dateHeader}
                 >
-                  {/* Enhanced Date Header */}
-                  <LinearGradient
-                    colors={[colors.primary + '08', colors.primary + '05']}
-                    style={styles.dateHeader}
-                  >
-                    <View style={styles.dateHeaderLeft}>
-                      <Ionicons name="time-outline" size={18} color={colors.primary} />
-                      <Text style={styles.dateTitle}>{dateGroup.formattedDate}</Text>
-                    </View>
-                    <View style={styles.dateBadge}>
-                      <Text style={styles.dateBadgeText}>
-                        {dateGroup.lessons.length} {t('classSelection.lessons') || 'ders'}
-                      </Text>
-                    </View>
-                  </LinearGradient>
+                  <View style={styles.dateHeaderLeft}>
+                    <Ionicons name="time-outline" size={18} color={colors.primary} />
+                    <Text style={styles.dateTitle}>{formatDisplayDate(selectedDateKey)}</Text>
+                  </View>
+                  <View style={styles.dateBadge}>
+                    <Text style={styles.dateBadgeText}>
+                      {filteredLessons.length} {t('classSelection.lessons') || 'ders'}
+                    </Text>
+                  </View>
+                </LinearGradient>
 
-                  {/* Enhanced Class Cards */}
-                  {dateGroup.lessons.map((lesson, lessonIndex) => {
-                    const categoryInfo = lesson.lessonTypeInfo || getCategoryInfo(lesson.title);
-                    const isFullyBooked = lesson.currentParticipants >= lesson.maxParticipants;
-                    const isUserBooked = lesson.participants && lesson.participants.includes(user?.uid);
-                    
-                    // Check if lesson is too close to start (within 2 hours)
-                    const now = new Date();
-                    const lessonDateTime = new Date(lesson.scheduledDate);
-                    const timeUntilLesson = lessonDateTime.getTime() - now.getTime();
-                    const twoHoursInMs = 2 * 60 * 60 * 1000;
-                    const isTooLateToBook = timeUntilLesson <= twoHoursInMs && timeUntilLesson > 0;
-                    const eightHoursInMs = 8 * 60 * 60 * 1000;
-                    const canCancelBooking = isUserBooked && timeUntilLesson >= eightHoursInMs;
-                    const buttonMode = (() => {
-                      if (isUserBooked && canCancelBooking) return 'cancel';
-                      if (isUserBooked) return 'booked';
-                      if (isTooLateToBook) return 'tooLate';
-                      if (isFullyBooked) return 'full';
-                      return 'book';
-                    })();
-                    const buttonDisabled = ['full', 'tooLate', 'booked'].includes(buttonMode);
-                    const isMutedDisabled = ['full', 'tooLate'].includes(buttonMode);
-                    const buttonGradient = (() => {
-                      switch (buttonMode) {
-                        case 'cancel':
-                          return [colors.error, colors.error + 'CC'];
-                        case 'booked':
-                          return [colors.success, colors.success + 'DD'];
-                        case 'tooLate':
-                          return [colors.warning, colors.warning + 'CC'];
-                        case 'full':
-                          return [colors.lightGray, colors.gray];
-                        default:
-                          return [colors.primary, colors.primaryDark];
-                      }
-                    })();
-                    const buttonIcon = (() => {
-                      switch (buttonMode) {
-                        case 'cancel':
-                          return 'close-circle-outline';
-                        case 'booked':
-                          return 'checkmark-circle-outline';
-                        case 'tooLate':
-                          return 'time-outline';
-                        case 'full':
-                          return 'close-circle-outline';
-                        default:
-                          return 'add-circle-outline';
-                      }
-                    })();
-                    const buttonLabel = (() => {
-                      switch (buttonMode) {
-                        case 'cancel':
-                          return t('classes.cancel') || 'İptal Et';
-                        case 'booked':
-                          return t('classSelection.bookedButton') || 'Rezerve Edildi';
-                        case 'tooLate':
-                          return t('classSelection.tooLateButton') || 'Çok Geç';
-                        case 'full':
-                          return t('classSelection.fullButton') || 'Dolu';
-                        default:
-                          return t('classSelection.bookButton') || 'Rezerve Et';
-                      }
-                    })();
-                    
-                    const capacityPercentage = (lesson.currentParticipants / lesson.maxParticipants) * 100;
-                    
-                    return (
-                      <Animated.View 
-                        key={lesson.id}
-                        style={[
-                          styles.classCard,
-                          isFullyBooked && styles.classCardDisabled,
-                          {
-                            transform: [{
-                              scale: scrollY.interpolate({
-                                inputRange: [100 * lessonIndex, 100 * (lessonIndex + 1)],
-                                outputRange: [1, 0.98],
-                                extrapolate: 'clamp',
-                              })
-                            }]
-                          }
-                        ]}
-                      >
-                        <LinearGradient
-                          colors={isFullyBooked ? [colors.gray, colors.lightGray] : [colors.white, colors.white + 'F8']}
-                          style={styles.cardGradient}
-                        >
-                          {/* Enhanced Header with Trainer Info */}
-                          <View style={styles.classHeader}>
-                            <View style={styles.classMainInfo}>
-                              <View style={styles.classTitleRow}>
-                                <View style={[
-                                  styles.categoryIconSmall, 
-                                  { backgroundColor: (categoryInfo.color || colors.primary) + '15' }
-                                ]}>
-                                  <Ionicons 
-                                    name={categoryInfo.icon || 'fitness-outline'} 
-                                    size={16} 
-                                    color={categoryInfo.color || colors.primary} 
-                                  />
-                                </View>
-                                <View style={styles.classNameContainer}>
-                                  <Text style={styles.className}>{lesson.title}</Text>
-                                </View>
-                              </View>
-                              
-                              {/* Trainer Information */}
-                              <View style={styles.trainerInfo}>
-                                <View style={styles.trainerAvatar}>
-                                  <Ionicons name="person" size={16} color={colors.primary} />
-                                </View>
-                                <View style={styles.trainerDetails}>
-                                  <Text style={styles.trainerName}>🧘‍♀️ {lesson.instructor}</Text>
-                                  <Text style={styles.trainerTitle}>
-                                    {lesson.trainerSpecializations?.length > 0 
-                                      ? lesson.trainerSpecializations[0] 
-                                      : ''
-                                    }
-                                  </Text>
-                                  {lesson.trainerActive === false && (
-                                    <Text style={[styles.trainerTitle, { color: colors.warning }]}>
-                                      ⚠️ Pasif Eğitmen
-                                    </Text>
-                                  )}
-                                </View>
-                              </View>
-                            </View>
-                            
-                            {isFullyBooked ? (
-                              <View style={styles.fullBadge}>
-                                <Text style={styles.fullBadgeText}>{t('classSelection.fullBadge') || 'DOLU'}</Text>
-                              </View>
-                            ) : (
-                              <View style={[styles.availableBadge, { backgroundColor: colors.success + '15' }]}>
-                                <Text style={[styles.availableBadgeText, { color: colors.success }]}>{t('classSelection.availableBadge') || 'MÜSAİT'}</Text>
-                              </View>
-                            )}
-                          </View>
-
-                          {/* Enhanced Class Details */}
-                          <View style={styles.classDetails}>
-                            <View style={styles.detailsRow}>
-                              <View style={styles.detailItem}>
-                                <Ionicons name="time-outline" size={16} color={colors.textSecondary} />
-                                <Text style={styles.detailText}>{lesson.formattedTime}</Text>
-                                <View style={styles.durationBadge}>
-                                  <Text style={styles.durationText}>
-                                    {lesson.duration}{t('classSelection.minutesShort') || 'dk'}
-                                  </Text>
-                                </View>
-                              </View>
-                            </View>
-                            
-                            <View style={styles.detailsRow}>
-                              <View style={styles.detailItem}>
-                                <Ionicons name="people-outline" size={16} color={colors.textSecondary} />
-                                <Text style={styles.detailText}>
-                                  {lesson.currentParticipants}/{lesson.maxParticipants} {t('classSelection.people') || 'kişi'}
-                                </Text>
-                                <View style={styles.capacityBarContainer}>
-                                  <View style={styles.capacityBar}>
-                                    <Animated.View 
-                                      style={[
-                                        styles.capacityFill,
-                                        { 
-                                          width: `${capacityPercentage}%`,
-                                          backgroundColor: isFullyBooked ? colors.error : 
-                                            capacityPercentage > 80 ? colors.warning : colors.success
-                                        }
-                                      ]}
-                                    />
-                                  </View>
-                                </View>
-                              </View>
-                            </View>
-                          </View>
-
-                          {/* Enhanced Footer */}
-                          <View style={styles.classFooter}>
-                            <View style={styles.leftFooter}>
-                              {/* Lesson Type Badge */}
-                              <View style={[
-                                styles.levelBadge, 
-                                { backgroundColor: '#38a169' + '15', marginRight: 8 }
-                              ]}>
-                                <Text style={[
-                                  styles.levelText, 
-                                  { color: '#38a169' }
-                                ]}>
-                                  {lesson.type || lesson.lessonTypeInfo?.name || t('classSelection.general') || 'Genel'}
-                                </Text>
-                              </View>
-                              
-                              {/* Status Level Badge */}
-                              <View style={[
-                                styles.levelBadge, 
-                                { backgroundColor: (lesson.statusColor || '#F59E0B') + '15' }
-                              ]}>
-                                <Text style={[
-                                  styles.levelText, 
-                                  { color: lesson.statusColor || '#F59E0B' }
-                                ]}>
-                                  {getLevelText(lesson.statusLevel || lesson.statusInfo?.name) || t('classSelection.intermediate') || 'Orta'}
-                                </Text>
-                              </View>
-                            </View>
-                            
-                            <TouchableOpacity 
-                              style={[
-                                styles.bookButton,
-                                buttonDisabled && styles.bookButtonDisabled
-                              ]}
-                              onPress={() => {
-                                if (buttonMode === 'cancel') {
-                                  handleCancelClass(lesson);
-                                } else if (buttonMode === 'book') {
-                                  handleBookClass(lesson);
-                                }
-                              }}
-                              disabled={buttonDisabled}
-                            >
-                              <LinearGradient
-                                colors={buttonGradient}
-                                style={styles.bookButtonGradient}
-                              >
-                                <Ionicons 
-                                  name={buttonIcon} 
-                                  size={18} 
-                                  color={isMutedDisabled ? colors.textSecondary : colors.white} 
-                                />
-                                <Text style={[
-                                  styles.bookButtonText,
-                                  isMutedDisabled && styles.bookButtonTextDisabled
-                                ]}>
-                                  {buttonLabel}
-                                </Text>
-                              </LinearGradient>
-                            </TouchableOpacity>
-                          </View>
-                        </LinearGradient>
-                      </Animated.View>
-                    );
-                  })}
-                </Animated.View>
-              ))
+                {/* Class Cards - using memoized component */}
+                {filteredLessons.map((lesson) => (
+                  <LessonCard
+                    key={lesson.id}
+                    lesson={lesson}
+                    userId={user?.uid}
+                    onBook={handleBookClass}
+                    onCancel={handleCancelClass}
+                    t={t}
+                  />
+                ))}
+              </View>
             )}
           </View>
 
@@ -1027,7 +795,17 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontWeight: '500',
   },
-  
+  loadingLessonsContainer: {
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingLessonsText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    marginTop: 8,
+  },
+
   // Modern Header Styles
   header: {
     paddingHorizontal: 24,

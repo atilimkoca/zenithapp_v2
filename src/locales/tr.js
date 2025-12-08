@@ -278,6 +278,7 @@ export default {
     
     // Loading and Errors
     loadingLessons: 'Dersler yükleniyor...',
+    loadingDayLessons: 'Günün dersleri yükleniyor...',
     loadingError: 'Dersler yüklenirken bir hata oluştu.',
     loginRequired: 'Rezervasyon yapmak için giriş yapmanız gerekiyor.',
     

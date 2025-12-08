@@ -2,15 +2,35 @@ import { collection, query, where, getDocs, orderBy, doc, updateDoc, arrayUnion,
 import { db } from '../config/firebase';
 import { bookingHistoryService } from './bookingHistoryService';
 
-// Helper function to fetch trainers data
-const TRAINERS_CACHE_TTL = 60 * 1000; // 60 seconds
+// Cache configuration
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes for supporting data
+const LESSONS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes for lessons (shorter to reflect bookings)
+
+// Trainers cache
 let trainersCache = null;
 let trainersCacheTimestamp = 0;
+
+// Lesson types cache
+let lessonTypesCache = null;
+let lessonTypesCacheTimestamp = 0;
+
+// Status levels cache
+let statusLevelsCache = null;
+let statusLevelsCacheTimestamp = 0;
+
+// Available dates cache (lightweight - just date strings)
+let availableDatesCache = null;
+let availableDatesCacheTimestamp = 0;
+
+// All processed lessons cache (indexed by date for fast lookup)
+let allLessonsCache = null;
+let allLessonsCacheTimestamp = 0;
+let lessonsByDateCache = {}; // { "2024-01-15": [lessons], "2024-01-16": [lessons] }
 
 const fetchTrainersData = async (options = {}) => {
   const forceRefresh = typeof options === 'boolean' ? options : options.forceRefresh;
 
-  if (!forceRefresh && trainersCache && Date.now() - trainersCacheTimestamp < TRAINERS_CACHE_TTL) {
+  if (!forceRefresh && trainersCache && Date.now() - trainersCacheTimestamp < CACHE_TTL) {
     return trainersCache;
   }
 
@@ -46,40 +66,35 @@ const fetchTrainersData = async (options = {}) => {
   }
 };
 
-// Helper function to fetch lesson types from admin settings or use predefined types
-const fetchLessonTypes = async () => {
+// Helper function to fetch lesson types from admin settings or use predefined types (with caching)
+const fetchLessonTypes = async (forceRefresh = false) => {
+  if (!forceRefresh && lessonTypesCache && Date.now() - lessonTypesCacheTimestamp < CACHE_TTL) {
+    return lessonTypesCache;
+  }
   try {
-    
-    // Try to get lesson types from settings collection first
     const settingsDoc = await getDoc(doc(db, 'settings', 'lessonTypes'));
-    
-    if (settingsDoc.exists()) {
-      const data = settingsDoc.data();
-      return data.types || getDefaultLessonTypes();
-    } else {
-      return getDefaultLessonTypes();
-    }
+    const types = settingsDoc.exists() ? (settingsDoc.data().types || getDefaultLessonTypes()) : getDefaultLessonTypes();
+    lessonTypesCache = types;
+    lessonTypesCacheTimestamp = Date.now();
+    return types;
   } catch (error) {
-    console.error('❌ Error fetching lesson types:', error);
-    return getDefaultLessonTypes();
+    return lessonTypesCache || getDefaultLessonTypes();
   }
 };
 
-// Helper function to fetch lesson status/levels from Firebase
-const fetchLessonStatus = async () => {
+// Helper function to fetch lesson status/levels from Firebase (with caching)
+const fetchLessonStatus = async (forceRefresh = false) => {
+  if (!forceRefresh && statusLevelsCache && Date.now() - statusLevelsCacheTimestamp < CACHE_TTL) {
+    return statusLevelsCache;
+  }
   try {
-    
     const statusDoc = await getDoc(doc(db, 'settings', 'lessonStatus'));
-    
-    if (statusDoc.exists()) {
-      const data = statusDoc.data();
-      return data.levels || getDefaultStatusLevels();
-    } else {
-      return getDefaultStatusLevels();
-    }
+    const levels = statusDoc.exists() ? (statusDoc.data().levels || getDefaultStatusLevels()) : getDefaultStatusLevels();
+    statusLevelsCache = levels;
+    statusLevelsCacheTimestamp = Date.now();
+    return levels;
   } catch (error) {
-    console.error('❌ Error fetching lesson status:', error);
-    return getDefaultStatusLevels();
+    return statusLevelsCache || getDefaultStatusLevels();
   }
 };
 
@@ -214,17 +229,174 @@ const normalizeDateValue = (value) => {
   return null;
 };
 
+// Helper to process a single lesson document into the full lesson object
+const processLessonDoc = (docData, docId, trainersMap, lessonTypes, statusLevels) => {
+  const trainer = trainersMap[docData.trainerId];
+  const lessonTypeInfo = lessonTypes.find(type =>
+    type.name.toLowerCase() === docData.type?.toLowerCase() ||
+    type.id.toLowerCase() === docData.type?.toLowerCase().replace(/\s+/g, '-')
+  );
+  const statusInfo = statusLevels.find(level =>
+    level.id === (docData.level || 'intermediate') ||
+    level.name.toLowerCase() === (docData.level || 'orta').toLowerCase()
+  ) || statusLevels.find(level => level.id === 'intermediate');
+
+  const lessonDate = normalizeDateValue(docData.scheduledDate);
+  if (!lessonDate) return null;
+
+  const scheduledDateISO = lessonDate.toISOString();
+
+  return {
+    id: docId,
+    ...docData,
+    scheduledDate: scheduledDateISO,
+    formattedDate: scheduledDateISO,
+    formattedTime: `${docData.startTime} - ${docData.endTime}`,
+    currentParticipants: docData.participants ? docData.participants.length : 0,
+    availableSpots: docData.maxParticipants - (docData.participants ? docData.participants.length : 0),
+    isRecurring: docData.isRecurring || false,
+    lessonPackageType: docData.maxParticipants === 1 ? 'one-on-one' : 'group',
+    instructor: trainer ? trainer.displayName : (docData.trainerName || 'No Trainer Information'),
+    trainerSpecializations: trainer ? trainer.specializations : [],
+    trainerBio: trainer ? trainer.bio : '',
+    trainerActive: trainer ? trainer.isActive : false,
+    lessonTypeInfo: lessonTypeInfo || {
+      name: docData.type || 'General',
+      description: 'Lesson description not available',
+      icon: 'fitness-outline',
+      color: '#6B7280'
+    },
+    statusInfo: statusInfo,
+    statusLevel: statusInfo?.name,
+    statusColor: statusInfo?.color,
+    trainingType: getTrainingType(docData.type || docData.title, lessonTypeInfo),
+    difficulty: docData.level || 'intermediate',
+    equipment: getEquipmentNeeded(docData.type || docData.title, lessonTypeInfo),
+    benefits: getClassBenefits(docData.type || docData.title, lessonTypeInfo),
+  };
+};
+
+// Helper to fetch and cache all lessons with date indexing
+const fetchAndCacheAllLessons = async (forceRefresh = false) => {
+  // Return from cache if valid
+  if (!forceRefresh && allLessonsCache && Date.now() - allLessonsCacheTimestamp < CACHE_TTL) {
+    return { lessons: allLessonsCache, byDate: lessonsByDateCache };
+  }
+
+  // Fetch supporting data from cache (fast)
+  const [trainersMap, lessonTypes, statusLevels] = await Promise.all([
+    fetchTrainersData(),
+    fetchLessonTypes(),
+    fetchLessonStatus()
+  ]);
+
+  // Fetch all active lessons once
+  const lessonsSnapshot = await getDocs(query(collection(db, 'lessons'), where('status', '==', 'active')));
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const allLessons = [];
+  const byDate = {};
+
+  lessonsSnapshot.forEach((doc) => {
+    const data = doc.data();
+    if (!data.scheduledDate || !data.startTime || !data.endTime) return;
+
+    const lessonDate = normalizeDateValue(data.scheduledDate);
+    if (!lessonDate || lessonDate < today) return;
+
+    const processedLesson = processLessonDoc(data, doc.id, trainersMap, lessonTypes, statusLevels);
+    if (!processedLesson) return;
+
+    allLessons.push(processedLesson);
+
+    // Index by date
+    const dateKey = lessonDate.toISOString().split('T')[0];
+    if (!byDate[dateKey]) {
+      byDate[dateKey] = [];
+    }
+    byDate[dateKey].push(processedLesson);
+  });
+
+  // Sort lessons within each date by start time
+  Object.keys(byDate).forEach(dateKey => {
+    byDate[dateKey].sort((a, b) => {
+      const timeA = (a.startTime || '').replace(':', '');
+      const timeB = (b.startTime || '').replace(':', '');
+      return (parseInt(timeA) || 0) - (parseInt(timeB) || 0);
+    });
+  });
+
+  // Update cache
+  allLessonsCache = allLessons;
+  lessonsByDateCache = byDate;
+  allLessonsCacheTimestamp = Date.now();
+
+  // Also update available dates cache
+  availableDatesCache = Object.keys(byDate).sort();
+  availableDatesCacheTimestamp = Date.now();
+
+  return { lessons: allLessons, byDate };
+};
+
 export const lessonService = {
   // Get lesson types
   getLessonTypes: fetchLessonTypes,
-  
+
   // Get lesson status levels
   getLessonStatus: fetchLessonStatus,
-  
+
   // Get trainers data
   getTrainersData: fetchTrainersData,
 
-  // Get all active lessons grouped by date
+  // Get available dates (uses shared cache)
+  getAvailableDates: async (forceRefresh = false) => {
+    try {
+      // Use cached dates if available and valid
+      if (!forceRefresh && availableDatesCache && Date.now() - availableDatesCacheTimestamp < CACHE_TTL) {
+        return { success: true, dates: availableDatesCache };
+      }
+
+      // Fetch and cache all lessons (this populates availableDatesCache too)
+      await fetchAndCacheAllLessons(forceRefresh);
+
+      return { success: true, dates: availableDatesCache || [] };
+    } catch (error) {
+      console.error('Error fetching available dates:', error);
+      return { success: false, dates: availableDatesCache || [], error: error.message };
+    }
+  },
+
+  // Get lessons for a specific date (instant from cache after first load)
+  getLessonsByDate: async (dateString, forceRefresh = false) => {
+    try {
+      // Check if we have cached lessons for this date
+      if (!forceRefresh && lessonsByDateCache[dateString] && Date.now() - allLessonsCacheTimestamp < CACHE_TTL) {
+        return {
+          success: true,
+          date: dateString,
+          lessons: lessonsByDateCache[dateString] || [],
+          fromCache: true
+        };
+      }
+
+      // Fetch and cache all lessons if needed
+      const { byDate } = await fetchAndCacheAllLessons(forceRefresh);
+
+      return {
+        success: true,
+        date: dateString,
+        lessons: byDate[dateString] || [],
+        fromCache: false
+      };
+    } catch (error) {
+      console.error('Error fetching lessons by date:', error);
+      return { success: false, date: dateString, lessons: [], error: error.message };
+    }
+  },
+
+  // Get all active lessons grouped by date (keep for backward compatibility but mark as heavy)
   getAllLessons: async () => {
     try {
       
@@ -249,7 +421,6 @@ export const lessonService = {
           today.setHours(0, 0, 0, 0); // Set to start of day for comparison
           
           if (!lessonDate) {
-            console.warn('Skipping lesson with invalid scheduledDate:', doc.id, { scheduledDate: data.scheduledDate });
             return;
           }
 
@@ -308,35 +479,15 @@ export const lessonService = {
               benefits: getClassBenefits(data.type || data.title, lessonTypeInfo),
             });
           }
-        } else if (data.status === 'active') {
-          console.warn('Skipping lesson with missing required fields:', doc.id, {
-            hasScheduledDate: !!data.scheduledDate,
-            hasStartTime: !!data.startTime,
-            hasEndTime: !!data.endTime
-          });
         }
       });
       
       // Sort by scheduled date and time on client side
       lessons.sort((a, b) => {
-        try {
-          const dateTimeA = normalizeDateValue(a.scheduledDate);
-          const dateTimeB = normalizeDateValue(b.scheduledDate);
-
-          // Check if dates are valid
-          if (!dateTimeA || !dateTimeB) {
-            console.warn('Invalid date found during sorting:', {
-              lessonA: { id: a.id, scheduledDate: a.scheduledDate, startTime: a.startTime },
-              lessonB: { id: b.id, scheduledDate: b.scheduledDate, startTime: b.startTime }
-            });
-            return 0; // Keep original order if dates are invalid
-          }
-          
-          return dateTimeA - dateTimeB;
-        } catch (error) {
-          console.warn('Error sorting lessons by date:', error);
-          return 0;
-        }
+        const dateTimeA = normalizeDateValue(a.scheduledDate);
+        const dateTimeB = normalizeDateValue(b.scheduledDate);
+        if (!dateTimeA || !dateTimeB) return 0;
+        return dateTimeA - dateTimeB;
       });
       
       // Group lessons by date
@@ -716,22 +867,15 @@ const formatDate = (dateString) => {
 // Helper function to group lessons by date
 const groupLessonsByDate = (lessons) => {
   const grouped = {};
-  
+
   lessons.forEach(lesson => {
-    // Handle cases where scheduledDate might be undefined or null
-    if (!lesson.scheduledDate) {
-      console.warn('Lesson missing scheduledDate:', lesson.id);
-      return; // Skip this lesson
-    }
+    if (!lesson.scheduledDate) return;
     const parsedDate = normalizeDateValue(lesson.scheduledDate);
-    if (!parsedDate) {
-      console.warn('Error parsing date for lesson:', lesson.id, lesson.scheduledDate);
-      return; // Skip this lesson
-    }
+    if (!parsedDate) return;
 
     const dateKey = parsedDate.toISOString().split('T')[0];
     const formattedDate = lesson.formattedDate || formatDate(parsedDate);
-    
+
     if (!grouped[dateKey]) {
       grouped[dateKey] = {
         date: dateKey,
@@ -739,30 +883,24 @@ const groupLessonsByDate = (lessons) => {
         lessons: []
       };
     }
-    
+
     grouped[dateKey].lessons.push(lesson);
   });
-  
+
   // Convert to array and sort by date
   const groupedArray = Object.values(grouped).sort((a, b) => {
     return new Date(a.date) - new Date(b.date);
   });
-  
+
   // Sort lessons within each date group by start time
   groupedArray.forEach(dateGroup => {
     dateGroup.lessons.sort((a, b) => {
-      try {
-        // Convert time strings (like "08:30") to comparable numbers
-        const timeA = a.startTime.replace(':', '');
-        const timeB = b.startTime.replace(':', '');
-        return parseInt(timeA) - parseInt(timeB);
-      } catch (error) {
-        console.warn('Error sorting lessons by time:', error);
-        return 0;
-      }
+      const timeA = (a.startTime || '').replace(':', '');
+      const timeB = (b.startTime || '').replace(':', '');
+      return (parseInt(timeA) || 0) - (parseInt(timeB) || 0);
     });
   });
-  
+
   return groupedArray;
 };
 

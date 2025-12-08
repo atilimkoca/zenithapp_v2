@@ -230,6 +230,7 @@
     noLessonsDescription: 'No lessons match your search criteria.',
     noActiveLessons: 'No active lessons available yet.',
     loadingLessons: 'Loading lessons...',
+    loadingDayLessons: 'Loading lessons for this day...',
     loadingError: 'An error occurred while loading lessons.',
     bookingConfirmTitle: 'Lesson Booking',
     bookingConfirmMessage: 'Are you sure you want to book this lesson?',
