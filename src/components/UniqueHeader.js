@@ -4,7 +4,7 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
   StatusBar,
   Image,
 } from 'react-native';
@@ -13,8 +13,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../constants/colors';
 import { useNotifications } from '../context/NotificationContext';
-
-const { width } = Dimensions.get('window');
 
 export default function UniqueHeader({
   title,

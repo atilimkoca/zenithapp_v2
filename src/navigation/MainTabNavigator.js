@@ -6,7 +6,7 @@ import {
   Text, 
   TouchableOpacity, 
   Animated, 
-  Dimensions,
+  useWindowDimensions,
   Platform 
 } from 'react-native';
 import { colors } from '../constants/colors';
@@ -19,7 +19,6 @@ import ClassHistoryScreen from '../screens/ClassHistoryScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
-const { width } = Dimensions.get('window');
 
 // Compact, clean tab button with crisp icons
 function CustomTabButton({ children, onPress, accessibilityState, route, label }) {

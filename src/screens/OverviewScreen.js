@@ -5,7 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Dimensions,
+  useWindowDimensions,
   Alert,
   Linking,
   RefreshControl,
@@ -19,8 +19,6 @@ import { lessonCreditsService } from '../services/lessonCreditsService';
 import { userLessonService } from '../services/userLessonService';
 import { formatLocalizedDate } from '../utils/dateUtils';
 import NotificationScreen from './NotificationScreen';
-
-const { width } = Dimensions.get('window');
 
 // Helper function to safely translate lesson types
 const translateLessonType = (t, lessonTitle) => {
