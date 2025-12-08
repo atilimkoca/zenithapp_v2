@@ -75,7 +75,7 @@ export default ({ config }) => ({
   android: {
     ...config.android,
     package: 'com.zenithstudio.app',
-    versionCode: 1,
+    versionCode: 2,
     adaptiveIcon: {
       foregroundImage: './assets/app_icon.jpeg',
       backgroundColor: '#ffffff'
