@@ -1,4 +1,4 @@
-import { collection, query, where, getDocs, orderBy, doc, updateDoc, arrayUnion, arrayRemove, getDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, updateDoc, arrayUnion, arrayRemove, getDoc, addDoc, serverTimestamp, startAt, endAt, deleteDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { bookingHistoryService } from './bookingHistoryService';
 
@@ -26,6 +26,13 @@ let availableDatesCacheTimestamp = 0;
 let allLessonsCache = null;
 let allLessonsCacheTimestamp = 0;
 let lessonsByDateCache = {}; // { "2024-01-15": [lessons], "2024-01-16": [lessons] }
+
+// Admin caches (kept separate from user-facing caches)
+let adminAvailableDatesCache = null;
+let adminLessonsByDateCache = {};
+let adminAllLessonsCache = null;
+let adminLessonsCacheTimestamp = 0;
+let adminUpcomingLessonCount = 0;
 
 const fetchTrainersData = async (options = {}) => {
   const forceRefresh = typeof options === 'boolean' ? options : options.forceRefresh;
@@ -993,8 +1000,170 @@ const getClassBenefits = (lessonTitle, lessonTypeInfo) => {
   return ['General Fitness'];
 };
 
+const getAdminDateKey = (value) => {
+  const normalized = normalizeDateValue(value);
+  if (!normalized) return null;
+  return normalized.toISOString().split('T')[0];
+};
+
+const fetchAndCacheAdminLessons = async (options = {}) => {
+  const normalizedOptions = typeof options === 'boolean' ? { forceRefresh: options } : options;
+  const {
+    forceRefresh = false,
+    pastDays = 0,
+    futureDays = 120,
+  } = normalizedOptions;
+
+  const cacheIsValid = !forceRefresh &&
+    adminAllLessonsCache &&
+    Date.now() - adminLessonsCacheTimestamp < LESSONS_CACHE_TTL;
+
+  if (cacheIsValid) {
+    return { lessons: adminAllLessonsCache, byDate: adminLessonsByDateCache };
+  }
+
+  const [trainersMap, lessonTypes, statusLevels] = await Promise.all([
+    fetchTrainersData(),
+    fetchLessonTypes(),
+    fetchLessonStatus()
+  ]);
+
+  const now = new Date();
+  const startDate = new Date(now);
+  startDate.setHours(0, 0, 0, 0);
+  startDate.setDate(startDate.getDate() - pastDays);
+
+  const endDate = new Date(now);
+  endDate.setHours(23, 59, 59, 999);
+  endDate.setDate(endDate.getDate() + futureDays);
+
+  const lessonsQuery = query(
+    collection(db, 'lessons'),
+    orderBy('scheduledDate'),
+    startAt(startDate.toISOString()),
+    endAt(endDate.toISOString())
+  );
+
+  const querySnapshot = await getDocs(lessonsQuery);
+
+  const lessons = [];
+  const byDate = {};
+
+  querySnapshot.forEach((lessonDoc) => {
+    const data = lessonDoc.data();
+    const lessonDate = normalizeDateValue(data.scheduledDate);
+    if (!lessonDate) return;
+
+    // Double-check bounds in case of mixed data types
+    if (lessonDate < startDate || lessonDate > endDate) return;
+
+    const processedLesson = processLessonDoc(data, lessonDoc.id, trainersMap, lessonTypes, statusLevels);
+    if (!processedLesson) return;
+
+    lessons.push(processedLesson);
+
+    const dateKey = getAdminDateKey(lessonDate);
+    if (!byDate[dateKey]) {
+      byDate[dateKey] = [];
+    }
+    byDate[dateKey].push(processedLesson);
+  });
+
+  Object.keys(byDate).forEach((dateKey) => {
+    byDate[dateKey].sort((a, b) => {
+      const timeA = (a.startTime || '').replace(':', '');
+      const timeB = (b.startTime || '').replace(':', '');
+      return (parseInt(timeA, 10) || 0) - (parseInt(timeB, 10) || 0);
+    });
+  });
+
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  adminUpcomingLessonCount = lessons.filter((lesson) => {
+    const parsedDate = normalizeDateValue(lesson.scheduledDate);
+    if (!parsedDate) return false;
+    parsedDate.setHours(0, 0, 0, 0);
+    return parsedDate >= todayStart && lesson.status !== 'cancelled';
+  }).length;
+
+  adminAllLessonsCache = lessons;
+  adminLessonsByDateCache = byDate;
+  adminAvailableDatesCache = Object.keys(byDate).sort();
+  adminLessonsCacheTimestamp = Date.now();
+
+  return { lessons, byDate };
+};
+
 // Admin-specific methods for lesson management
 const adminLessonService = {
+  // Lightweight date list for admin (uses filtered window)
+  getAvailableDates: async (options = {}) => {
+    const normalizedOptions = typeof options === 'boolean' ? { forceRefresh: options } : options;
+    const {
+      forceRefresh = false,
+      pastDays = 0,
+      futureDays = 120,
+    } = normalizedOptions;
+
+    try {
+      await fetchAndCacheAdminLessons({ forceRefresh, pastDays, futureDays });
+
+      return {
+        success: true,
+        dates: adminAvailableDatesCache || [],
+        totalLessons: adminAllLessonsCache?.length || 0,
+        upcomingLessons: adminUpcomingLessonCount,
+      };
+    } catch (error) {
+      console.error('Error getting admin available dates:', error);
+      return {
+        success: false,
+        dates: adminAvailableDatesCache || [],
+        totalLessons: adminAllLessonsCache?.length || 0,
+        upcomingLessons: adminUpcomingLessonCount,
+        message: 'Ders tarihleri alınırken hata oluştu.'
+      };
+    }
+  },
+
+  // Get lessons for a specific date (cached per day)
+  getLessonsByDate: async (dateString, options = {}) => {
+    const normalizedOptions = typeof options === 'boolean' ? { forceRefresh: options } : options;
+    const {
+      forceRefresh = false,
+      pastDays = 0,
+      futureDays = 120,
+    } = normalizedOptions;
+
+    try {
+      const cacheIsValid = adminAllLessonsCache &&
+        !forceRefresh &&
+        Date.now() - adminLessonsCacheTimestamp < LESSONS_CACHE_TTL;
+
+      if (!cacheIsValid) {
+        await fetchAndCacheAdminLessons({ forceRefresh, pastDays, futureDays });
+      }
+
+      return {
+        success: true,
+        date: dateString,
+        lessons: adminLessonsByDateCache[dateString] || [],
+        totalLessons: adminAllLessonsCache?.length || 0,
+        upcomingLessons: adminUpcomingLessonCount,
+      };
+    } catch (error) {
+      console.error('Error getting admin lessons by date:', error);
+      return {
+        success: false,
+        date: dateString,
+        lessons: [],
+        totalLessons: adminAllLessonsCache?.length || 0,
+        upcomingLessons: adminUpcomingLessonCount,
+        message: 'Dersler alınırken hata oluştu.'
+      };
+    }
+  },
+
   // Get all lessons for admin
   getAllLessons: async () => {
     try {
@@ -1075,6 +1244,24 @@ const adminLessonService = {
         success: false,
         error: error.code,
         message: 'Ders iptal edilirken hata oluştu.'
+      };
+    }
+  },
+
+  // Permanently delete a lesson
+  deleteLesson: async (lessonId) => {
+    try {
+      await deleteDoc(doc(db, 'lessons', lessonId));
+      return {
+        success: true,
+        message: 'Ders silindi.'
+      };
+    } catch (error) {
+      console.error('Error deleting lesson:', error);
+      return {
+        success: false,
+        error: error.code,
+        message: 'Ders silinirken hata oluştu.'
       };
     }
   },

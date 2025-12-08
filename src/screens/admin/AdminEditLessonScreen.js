@@ -203,8 +203,6 @@ export default function AdminEditLessonScreen({ navigation, route }) {
   const [selectedDay, setSelectedDay] = useState(
     lesson.dayOfWeek || getDayKeyFromDate(resolvedScheduledDate)
   );
-  const [copyWeeks, setCopyWeeks] = useState('');
-  const [copyLoading, setCopyLoading] = useState(false);
   const participantsCount = lesson.enrolledStudents?.length || lesson.participants?.length || 0;
   const parsedMaxStudents = parseInt(maxStudents, 10);
   const isIOS = Platform.OS === 'ios';
@@ -262,42 +260,6 @@ export default function AdminEditLessonScreen({ navigation, route }) {
     };
   };
 
-  const handleCopyWeeksChange = (value) => {
-    const sanitized = value.replace(/[^0-9]/g, '');
-    setCopyWeeks(sanitized);
-  };
-
-  const handleCopyToFutureWeeks = async () => {
-    const weeksCount = parseInt(copyWeeks, 10);
-
-    if (Number.isNaN(weeksCount) || weeksCount < 1) {
-      Alert.alert('Hata', 'Lütfen geçerli bir hafta sayısı girin (en az 1).');
-      return;
-    }
-
-    try {
-      setCopyLoading(true);
-      const payload = buildLessonPayload();
-      const copyResult = await adminLessonService.copyLessonToFutureWeeks(payload, weeksCount);
-
-      if (copyResult.success) {
-        Alert.alert('Başarılı', `${copyResult.createdCount} hafta için ders kopyalandı.`);
-        setCopyWeeks('');
-      } else {
-        Alert.alert('Hata', copyResult.message || 'Ders kopyalanamadı. Lütfen tekrar deneyin.');
-      }
-    } catch (error) {
-      if (error.message === 'invalid-date') {
-        Alert.alert('Hata', 'Ders tarihi geçerli değil. Lütfen tarihi güncelleyin.');
-      } else {
-        console.error('Error copying lesson:', error);
-        Alert.alert('Hata', 'Ders kopyalanırken bir hata oluştu.');
-      }
-    } finally {
-      setCopyLoading(false);
-    }
-  };
-
   const handleSave = async () => {
     // Validation
     if (!title.trim()) {
@@ -334,7 +296,10 @@ export default function AdminEditLessonScreen({ navigation, route }) {
       const result = await adminLessonService.updateLesson(lesson.id, updatedLesson);
 
       if (result.success) {
-        Alert.alert('Başarılı', 'Ders başarıyla güncellendi', [
+        const message = result.updatedFutureCount
+          ? result.message || `Ders ve ${result.updatedFutureCount} gelecek ders güncellendi`
+          : 'Ders başarıyla güncellendi';
+        Alert.alert('Başarılı', message, [
           {
             text: 'Tamam',
             onPress: () => navigation.goBack(),
@@ -588,40 +553,6 @@ export default function AdminEditLessonScreen({ navigation, route }) {
               </View>
             </View>
 
-            <View style={[styles.copySection, styles.fieldWrapperLast]}>
-              <Text style={styles.copyLabel}>Bu dersi diğer haftalara kopyala</Text>
-              <View style={styles.copyControls}>
-                <View style={styles.copyInputWrapper}>
-                  <TextInput
-                    style={styles.copyInput}
-                    value={copyWeeks}
-                    onChangeText={handleCopyWeeksChange}
-                    placeholder="0"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                  />
-                  <Text style={styles.copyInputSuffix}>hafta</Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.copyButton, copyLoading && styles.copyButtonDisabled]}
-                  onPress={handleCopyToFutureWeeks}
-                  disabled={copyLoading}
-                >
-                  {copyLoading ? (
-                    <ActivityIndicator size="small" color={colors.white} />
-                  ) : (
-                    <>
-                      <Ionicons name="copy-outline" size={16} color={colors.white} />
-                      <Text style={styles.copyButtonText}>Kopyala</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.helperText}>
-                Girilen hafta sayısı kadar ders gelecek haftalara eklenir.
-              </Text>
-            </View>
           </View>
         </View>
 
@@ -1123,61 +1054,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.primary,
     textTransform: 'capitalize',
-    marginLeft: 6,
-  },
-  copySection: {
-    marginTop: 16,
-  },
-  copyLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: 10,
-  },
-  copyControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  copyInputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: colors.white,
-    width: 140,
-    marginRight: 12,
-  },
-  copyInput: {
-    flex: 1,
-    fontSize: 15,
-    color: colors.textPrimary,
-  },
-  copyInputSuffix: {
-    marginLeft: 8,
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.primary,
-  },
-  copyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    borderRadius: 12,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    ...colors.shadow,
-  },
-  copyButtonDisabled: {
-    opacity: 0.6,
-  },
-  copyButtonText: {
-    color: colors.white,
-    fontSize: 14,
-    fontWeight: '600',
     marginLeft: 6,
   },
   infoStrip: {

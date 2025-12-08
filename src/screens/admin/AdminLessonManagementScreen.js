@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -24,45 +24,47 @@ import { adminLessonService as lessonService } from '../../services/lessonServic
 import UniqueHeader from '../../components/UniqueHeader';
 import DateCarouselPicker from '../../components/DateCarouselPicker';
 
-const formatDateKey = (value) => {
-  if (!value) return null;
-
-  let dateInstance = null;
-
-  if (typeof value === 'string') {
-    dateInstance = new Date(value);
-  } else if (value instanceof Date) {
-    dateInstance = value;
-  } else if (value?.seconds) {
-    dateInstance = new Date(value.seconds * 1000);
-  } else if (typeof value?.toDate === 'function') {
-    dateInstance = value.toDate();
-  }
-
-  if (!dateInstance || Number.isNaN(dateInstance.getTime())) {
-    return null;
-  }
-
-  const year = dateInstance.getFullYear();
-  const month = `${dateInstance.getMonth() + 1}`.padStart(2, '0');
-  const day = `${dateInstance.getDate()}`.padStart(2, '0');
-
-  return `${year}-${month}-${day}`;
-};
-
 export default function AdminLessonManagementScreen({ navigation }) {
-  const { user, userData } = useAuth();
+  const { user } = useAuth();
   const { language } = useI18n();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [lessons, setLessons] = useState([]);
+  const [availableDates, setAvailableDates] = useState([]);
+  const [currentDateLessons, setCurrentDateLessons] = useState([]);
   const [filteredLessons, setFilteredLessons] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDateKey, setSelectedDateKey] = useState(null);
+  const selectedDateRef = useRef(null);
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [loadingParticipants, setLoadingParticipants] = useState(false);
   const [participantDetails, setParticipantDetails] = useState({});
+  const [loadingLessons, setLoadingLessons] = useState(false);
+  const [upcomingLessonsCount, setUpcomingLessonsCount] = useState(0);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteCriteria, setDeleteCriteria] = useState({
+    dayOfWeek: '',
+    startTime: '',
+    trainerName: '',
+    duration: ''
+  });
+  const [deletePreview, setDeletePreview] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const dayOptions = useMemo(() => {
+    return Array.from(new Set(currentDateLessons.map(l => l.dayOfWeek).filter(Boolean)));
+  }, [currentDateLessons]);
+
+  const timeOptions = useMemo(() => {
+    return Array.from(new Set(currentDateLessons.map(l => l.startTime).filter(Boolean)));
+  }, [currentDateLessons]);
+
+  const trainerOptions = useMemo(() => {
+    return Array.from(new Set(currentDateLessons.map(l => l.trainerName).filter(Boolean)));
+  }, [currentDateLessons]);
+
+  const durationOptions = useMemo(() => {
+    return Array.from(new Set(currentDateLessons.map(l => l.duration).filter(Boolean)));
+  }, [currentDateLessons]);
   const panY = useRef(new Animated.Value(0)).current;
 
   const panResponder = useRef(
@@ -100,89 +102,92 @@ export default function AdminLessonManagementScreen({ navigation }) {
     })
   ).current;
 
-  useEffect(() => {
-    loadLessons();
+  const loadAvailableDates = useCallback(async (forceRefresh = false) => {
+    try {
+      const result = await lessonService.getAvailableDates({ forceRefresh });
+
+      if (result.success) {
+        setAvailableDates(result.dates || []);
+        if (typeof result.upcomingLessons === 'number') {
+          setUpcomingLessonsCount(result.upcomingLessons);
+        } else if (typeof result.totalLessons === 'number') {
+          setUpcomingLessonsCount(result.totalLessons);
+        }
+        return result.dates || [];
+      }
+
+      return [];
+    } catch (error) {
+      console.error('Error loading admin available dates:', error);
+      return [];
+    }
   }, []);
 
-  useEffect(() => {
-    filterLessons();
-  }, [lessons, searchTerm, selectedDateKey]);
-
-  const availableDateKeys = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const uniqueKeys = new Set();
-    lessons.forEach(lesson => {
-      const key = formatDateKey(lesson.scheduledDate);
-      if (key) {
-        // Only include dates from today onwards
-        const lessonDate = new Date(key);
-        if (!Number.isNaN(lessonDate.getTime()) && lessonDate >= today) {
-          uniqueKeys.add(key);
-        }
-      }
-    });
-    return Array.from(uniqueKeys).sort();
-  }, [lessons]);
-
-  useEffect(() => {
-    if (!availableDateKeys.length) {
-      if (selectedDateKey !== null) {
-        setSelectedDateKey(null);
-      }
-      return;
+  const loadLessonsForDate = useCallback(async (dateKey, forceRefresh = false) => {
+    if (!dateKey) {
+      setCurrentDateLessons([]);
+      setLoadingLessons(false);
+      setLoading(false);
+      return [];
     }
 
-    setSelectedDateKey(prev => {
-      if (prev && availableDateKeys.includes(prev)) {
-        return prev;
-      }
-      return availableDateKeys[0];
-    });
-  }, [availableDateKeys]);
-
-  // Reload lessons when screen comes back into focus (after editing/creating)
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('focus', () => {
-      loadLessons();
-    });
-
-    return unsubscribe;
-  }, [navigation]);
-
-  const loadLessons = async () => {
+    setLoadingLessons(true);
     try {
-      setLoading(true);
-      const result = await lessonService.getAllLessons();
-      
+      const result = await lessonService.getLessonsByDate(dateKey, { forceRefresh });
+
       if (result.success) {
-        setLessons(result.lessons);
-      } else {
-        Alert.alert('Hata', result.message || 'Dersler yüklenemedi');
+        const lessonsForDate = result.lessons || [];
+        setCurrentDateLessons(lessonsForDate);
+        if (typeof result.upcomingLessons === 'number') {
+          setUpcomingLessonsCount(result.upcomingLessons);
+        } else if (typeof result.totalLessons === 'number') {
+          setUpcomingLessonsCount(result.totalLessons);
+        }
+        return lessonsForDate;
       }
+
+      setCurrentDateLessons([]);
+      return [];
     } catch (error) {
-      console.error('Error loading lessons:', error);
+      console.error('Error loading lessons for date:', error);
       Alert.alert('Hata', 'Dersler yüklenirken hata oluştu');
+      setCurrentDateLessons([]);
+      return [];
     } finally {
+      setLoadingLessons(false);
       setLoading(false);
     }
-  };
+  }, []);
 
-  const filterLessons = () => {
-    let filtered = lessons.filter(lesson => {
-      const matchesSearch = 
-        lesson.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        lesson.trainerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        lesson.type?.toLowerCase().includes(searchTerm.toLowerCase());
+  const refreshData = useCallback(async (forceRefresh = false) => {
+    const dates = await loadAvailableDates(forceRefresh);
+    const preferredDate = selectedDateRef.current;
+    const nextDate = (preferredDate && dates.includes(preferredDate)) ? preferredDate : dates[0] || null;
+    selectedDateRef.current = nextDate;
+    setSelectedDateKey(nextDate);
+    await loadLessonsForDate(nextDate, forceRefresh);
+    if (!nextDate) {
+      setLoading(false);
+    }
+  }, [loadAvailableDates, loadLessonsForDate]);
 
-      const lessonDateKey = formatDateKey(lesson.scheduledDate);
-      const matchesDate = !selectedDateKey || lessonDateKey === selectedDateKey;
+  useEffect(() => {
+    setLoading(true);
+    refreshData();
+  }, [refreshData]);
 
-      return matchesSearch && matchesDate;
-    });
+  useEffect(() => {
+    let filtered = [...currentDateLessons];
 
-    // Sort lessons by date - earliest first
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      filtered = filtered.filter(lesson =>
+        lesson.title?.toLowerCase().includes(searchLower) ||
+        lesson.trainerName?.toLowerCase().includes(searchLower) ||
+        lesson.type?.toLowerCase().includes(searchLower)
+      );
+    }
+
     filtered.sort((a, b) => {
       const dateA = new Date(a.scheduledDate);
       const dateB = new Date(b.scheduledDate);
@@ -190,13 +195,28 @@ export default function AdminLessonManagementScreen({ navigation }) {
     });
 
     setFilteredLessons(filtered);
-  };
+  }, [currentDateLessons, searchTerm]);
+
+  // Reload lessons when screen comes back into focus (after editing/creating)
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      refreshData(true);
+    });
+
+    return unsubscribe;
+  }, [navigation, refreshData]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadLessons();
+    await refreshData(true);
     setRefreshing(false);
   };
+
+  const handleSelectDate = useCallback((dateKey) => {
+    selectedDateRef.current = dateKey;
+    setSelectedDateKey(dateKey);
+    loadLessonsForDate(dateKey);
+  }, [loadLessonsForDate]);
 
   const handleCancelLesson = async (lessonId, lessonTitle) => {
     Alert.alert(
@@ -212,7 +232,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
               const result = await lessonService.cancelLesson(lessonId, user.uid);
               
               if (result.success) {
-                await loadLessons();
+                await refreshData(true);
                 Alert.alert('Başarılı', 'Ders başarıyla iptal edildi');
               } else {
                 Alert.alert('Hata', result.message || 'Ders iptal edilemedi');
@@ -225,6 +245,76 @@ export default function AdminLessonManagementScreen({ navigation }) {
         }
       ]
     );
+  };
+
+  const handleDeleteCriteriaChange = (field, value) => {
+    setDeleteCriteria(prev => ({ ...prev, [field]: value }));
+    setDeletePreview(null);
+  };
+
+  const computeDeletePreview = async () => {
+    try {
+      if (!deleteCriteria.dayOfWeek && !deleteCriteria.startTime && !deleteCriteria.trainerName && !deleteCriteria.duration) {
+        Alert.alert('Uyarı', 'Lütfen en az bir koşul seçin (gün, saat, eğitmen veya süre).');
+        return null;
+      }
+
+      const result = await lessonService.getAllLessons();
+      if (!result.success) {
+        Alert.alert('Hata', result.message || 'Dersler alınamadı');
+        return null;
+      }
+
+      const matches = result.lessons.filter((lesson) => {
+        const lessonDay = lesson.dayOfWeek || (lesson.scheduledDate ? ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][new Date(lesson.scheduledDate).getDay()] : '');
+        const dayMatch = !deleteCriteria.dayOfWeek || lessonDay === deleteCriteria.dayOfWeek;
+        const startMatch = !deleteCriteria.startTime || lesson.startTime === deleteCriteria.startTime;
+        const trainerMatch = !deleteCriteria.trainerName || (lesson.trainerName || '').toLowerCase().includes(deleteCriteria.trainerName.toLowerCase());
+        const durationMatch = !deleteCriteria.duration || String(lesson.duration) === String(deleteCriteria.duration);
+        return dayMatch && startMatch && trainerMatch && durationMatch;
+      });
+
+      setDeletePreview({
+        count: matches.length,
+        sample: matches.slice(0, 4).map((m) => ({
+          id: m.id,
+          title: m.title,
+          time: `${m.startTime || ''}-${m.endTime || ''}`,
+          day: m.dayOfWeek || ''
+        }))
+      });
+
+      return matches;
+    } catch (error) {
+      console.error('Error computing delete preview:', error);
+      Alert.alert('Hata', 'Eşleşmeler alınırken hata oluştu.');
+      return null;
+    }
+  };
+
+  const handleBulkDeleteLessons = async () => {
+    try {
+      setDeleteLoading(true);
+      const matches = await computeDeletePreview();
+      if (!matches || matches.length === 0) {
+        setDeleteLoading(false);
+        return;
+      }
+
+      for (const lesson of matches) {
+        await lessonService.deleteLesson(lesson.id);
+      }
+
+      Alert.alert('Başarılı', `${matches.length} ders silindi.`);
+      setShowDeleteModal(false);
+      setDeletePreview(null);
+      refreshData(true);
+    } catch (error) {
+      console.error('Error deleting lessons:', error);
+      Alert.alert('Hata', 'Dersler silinirken bir hata oluştu.');
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const showLessonDetails = async (lesson) => {
@@ -499,13 +589,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
     );
   }
 
-  const upcomingCount = lessons.filter(l => {
-    const lessonDate = new Date(l.scheduledDate);
-    lessonDate.setHours(0, 0, 0, 0);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return lessonDate >= today && l.status !== 'cancelled';
-  }).length;
+  const upcomingCount = upcomingLessonsCount || currentDateLessons.length || 0;
 
   return (
     <View style={styles.container}>
@@ -539,21 +623,41 @@ export default function AdminLessonManagementScreen({ navigation }) {
           </View>
         </View>
 
+        <View style={styles.quickActionsRow}>
+          <TouchableOpacity
+            style={styles.bulkDeleteButton}
+            onPress={() => {
+              setDeleteCriteria({ dayOfWeek: '', startTime: '', trainerName: '', duration: '' });
+              setDeletePreview(null);
+              setShowDeleteModal(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="trash-outline" size={16} color={colors.white} />
+            <Text style={styles.bulkDeleteButtonText}>Ders Sil</Text>
+          </TouchableOpacity>
+        </View>
+
         <DateCarouselPicker
-          dates={availableDateKeys}
+          dates={availableDates}
           selectedDate={selectedDateKey}
-          onSelectDate={setSelectedDateKey}
+          onSelectDate={handleSelectDate}
         />
 
         {/* Lessons List */}
         <ScrollView
           style={styles.lessonsList}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
           showsVerticalScrollIndicator={false}
         >
-          {filteredLessons.length === 0 ? (
+          {loadingLessons ? (
+            <View style={styles.loadingLessonsContainer}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.loadingLessonsText}>Dersler yükleniyor...</Text>
+            </View>
+          ) : filteredLessons.length === 0 ? (
             <View style={styles.emptyState}>
               <View style={styles.emptyIconContainer}>
                 <LinearGradient
@@ -608,6 +712,134 @@ export default function AdminLessonManagementScreen({ navigation }) {
           <Ionicons name="add" size={28} color={colors.white} />
         </LinearGradient>
       </TouchableOpacity>
+
+      {/* Bulk Delete Modal */}
+      <Modal
+        visible={showDeleteModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowDeleteModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity style={styles.modalOverlayTouchable} activeOpacity={1} onPress={() => setShowDeleteModal(false)} />
+          <View style={styles.bulkModalContent}>
+            <View style={styles.bulkModalHeader}>
+              <Text style={styles.bulkModalTitle}>Ders Sil</Text>
+              <TouchableOpacity onPress={() => setShowDeleteModal(false)}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.bulkModalBody}>
+              <Text style={styles.bulkModalLabel}>Gün Seç</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bulkChipsRow}>
+                <TouchableOpacity
+                  style={[styles.bulkChip, deleteCriteria.dayOfWeek === '' && styles.bulkChipActive]}
+                  onPress={() => handleDeleteCriteriaChange('dayOfWeek', '')}
+                >
+                  <Text style={[styles.bulkChipText, deleteCriteria.dayOfWeek === '' && styles.bulkChipTextActive]}>Tümü</Text>
+                </TouchableOpacity>
+                {dayOptions.map((day) => (
+                  <TouchableOpacity
+                    key={day}
+                    style={[styles.bulkChip, deleteCriteria.dayOfWeek === day && styles.bulkChipActive]}
+                    onPress={() => handleDeleteCriteriaChange('dayOfWeek', day)}
+                  >
+                    <Text style={[styles.bulkChipText, deleteCriteria.dayOfWeek === day && styles.bulkChipTextActive]}>{day}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.bulkModalLabel}>Başlangıç Saati</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bulkChipsRow}>
+                <TouchableOpacity
+                  style={[styles.bulkChip, deleteCriteria.startTime === '' && styles.bulkChipActive]}
+                  onPress={() => handleDeleteCriteriaChange('startTime', '')}
+                >
+                  <Text style={[styles.bulkChipText, deleteCriteria.startTime === '' && styles.bulkChipTextActive]}>Tümü</Text>
+                </TouchableOpacity>
+                {timeOptions.map((time) => (
+                  <TouchableOpacity
+                    key={time}
+                    style={[styles.bulkChip, deleteCriteria.startTime === time && styles.bulkChipActive]}
+                    onPress={() => handleDeleteCriteriaChange('startTime', time)}
+                  >
+                    <Text style={[styles.bulkChipText, deleteCriteria.startTime === time && styles.bulkChipTextActive]}>{time}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.bulkModalLabel}>Eğitmen</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bulkChipsRow}>
+                <TouchableOpacity
+                  style={[styles.bulkChip, deleteCriteria.trainerName === '' && styles.bulkChipActive]}
+                  onPress={() => handleDeleteCriteriaChange('trainerName', '')}
+                >
+                  <Text style={[styles.bulkChipText, deleteCriteria.trainerName === '' && styles.bulkChipTextActive]}>Tümü</Text>
+                </TouchableOpacity>
+                {trainerOptions.map((name) => (
+                  <TouchableOpacity
+                    key={name}
+                    style={[styles.bulkChip, deleteCriteria.trainerName === name && styles.bulkChipActive]}
+                    onPress={() => handleDeleteCriteriaChange('trainerName', name)}
+                  >
+                    <Text style={[styles.bulkChipText, deleteCriteria.trainerName === name && styles.bulkChipTextActive]}>{name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.bulkModalLabel}>Süre (dk)</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.bulkChipsRow}>
+                <TouchableOpacity
+                  style={[styles.bulkChip, deleteCriteria.duration === '' && styles.bulkChipActive]}
+                  onPress={() => handleDeleteCriteriaChange('duration', '')}
+                >
+                  <Text style={[styles.bulkChipText, deleteCriteria.duration === '' && styles.bulkChipTextActive]}>Tümü</Text>
+                </TouchableOpacity>
+                {durationOptions.map((dur) => (
+                  <TouchableOpacity
+                    key={dur}
+                    style={[styles.bulkChip, deleteCriteria.duration === String(dur) && styles.bulkChipActive]}
+                    onPress={() => handleDeleteCriteriaChange('duration', String(dur))}
+                  >
+                    <Text style={[styles.bulkChipText, deleteCriteria.duration === String(dur) && styles.bulkChipTextActive]}>{dur} dk</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {deletePreview && (
+                <View style={styles.bulkPreviewBox}>
+                  <Text style={styles.bulkPreviewTitle}>{deletePreview.count} ders silinecek</Text>
+                  {deletePreview.sample.map((item) => (
+                    <Text key={item.id} style={styles.bulkPreviewItem}>
+                      {item.day} • {item.time} • {item.title}
+                    </Text>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            <View style={styles.bulkModalActions}>
+              <TouchableOpacity
+                style={[styles.bulkActionButton, styles.bulkPreviewButton]}
+                onPress={computeDeletePreview}
+                disabled={deleteLoading}
+              >
+                <Text style={styles.bulkActionButtonText}>Eşleşmeleri Önizle</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.bulkActionButton, styles.bulkDeleteConfirmButton, deleteLoading && { opacity: 0.6 }]}
+                onPress={handleBulkDeleteLessons}
+                disabled={deleteLoading}
+              >
+                <Text style={[styles.bulkActionButtonText, { color: colors.white }]}>
+                  {deleteLoading ? 'Siliniyor...' : 'Eşleşenleri Sil'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
   {/* Lesson Details Modal */}
   <Modal
@@ -979,9 +1211,43 @@ const styles = StyleSheet.create({
     padding: 4,
   },
 
+  quickActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  bulkDeleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.error,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    ...colors.shadow,
+    shadowOpacity: 0.12,
+  },
+  bulkDeleteButtonText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+
   // Modern Lessons List
   lessonsList: {
     flex: 1,
+  },
+  loadingLessonsContainer: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingLessonsText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontWeight: '500',
   },
   lessonCard: {
     marginBottom: 16,
@@ -995,6 +1261,113 @@ const styles = StyleSheet.create({
   lessonCardGradient: {
     borderRadius: 20,
     backgroundColor: colors.white,
+  },
+
+  bulkModalContent: {
+    marginHorizontal: 16,
+    marginTop: '20%',
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 16,
+    ...colors.shadow,
+  },
+  bulkModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  bulkModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  bulkModalBody: {
+    gap: 10,
+  },
+  bulkModalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  bulkInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.background,
+  },
+  bulkTextInput: {
+    fontSize: 15,
+    color: colors.textPrimary,
+  },
+  bulkPreviewBox: {
+    marginTop: 8,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  bulkPreviewTitle: {
+    fontWeight: '700',
+    fontSize: 14,
+    color: colors.textPrimary,
+    marginBottom: 6,
+  },
+  bulkPreviewItem: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  bulkChipsRow: {
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  bulkChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: 8,
+  },
+  bulkChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  bulkChipText: {
+    fontSize: 13,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  bulkChipTextActive: {
+    color: colors.white,
+  },
+  bulkModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  bulkActionButton: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginHorizontal: 4,
+  },
+  bulkPreviewButton: {
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  bulkDeleteConfirmButton: {
+    backgroundColor: colors.error,
+  },
+  bulkActionButtonText: {
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
   statusStrip: {
     position: 'absolute',
