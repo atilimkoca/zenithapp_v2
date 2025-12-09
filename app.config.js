@@ -24,6 +24,9 @@ export default ({ config }) => ({
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
     },
+    entitlements: {
+      'aps-environment': 'production'
+    },
     privacyManifests: {
       NSPrivacyAccessedAPITypes: [
         {
@@ -89,7 +92,7 @@ export default ({ config }) => ({
       "android.permission.WRITE_EXTERNAL_STORAGE",
       "android.permission.CAMERA"
     ],
-    googleServicesFile: process.env.GOOGLE_SERVICES_JSON
+    googleServicesFile: process.env.GOOGLE_SERVICES_JSON || './google-services.json'
   },
   plugins: [
     "expo-localization"

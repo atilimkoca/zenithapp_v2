@@ -3,24 +3,22 @@ import Constants from 'expo-constants';
 
 export const getExpoPushToken = async () => {
   try {
-    // For Expo Go development, no projectId needed
+    // Expo Go / dev-client keeps project info available automatically
     if (__DEV__ && Constants.appOwnership === 'expo') {
       return await Notifications.getExpoPushTokenAsync();
     }
-    
-    // For standalone builds, try without projectId first (Expo SDK 50+)
-    try {
-      return await Notifications.getExpoPushTokenAsync();
-    } catch (error) {
-      // If it specifically mentions projectId validation error, 
-      // this means we're in a context that requires it but don't have a valid one
-      if (error.message.includes('projectId') || error.message.includes('VALIDATION_ERROR')) {
-        // Log the error for debugging but don't crash the app
-        console.warn('Push notifications require proper project setup for standalone builds');
-        throw new Error('Push notifications not available in this build configuration');
-      }
-      throw error;
+
+    // Resolve projectId for standalone/App Store builds (required by Expo push service)
+    const projectId =
+      Constants?.expoConfig?.extra?.eas?.projectId ||
+      Constants?.expoConfig?.projectId ||
+      Constants?.easConfig?.projectId;
+
+    if (!projectId) {
+      throw new Error('Expo projectId missing; set extra.eas.projectId in app.config.js');
     }
+
+    return await Notifications.getExpoPushTokenAsync({ projectId });
   } catch (error) {
     throw new Error(`Failed to get push token: ${error.message}`);
   }

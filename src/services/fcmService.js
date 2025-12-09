@@ -67,31 +67,24 @@ class FCMService {
 
   // Save push token to Firestore
   async savePushTokenToFirestore(userId, pushToken) {
-    try {
-      const userRef = doc(db, 'users', userId);
-      
-      await updateDoc(userRef, {
-        pushToken: pushToken,
-        pushTokenUpdatedAt: serverTimestamp(),
-        devicePlatform: Platform.OS,
-        notificationsEnabled: true
-      });
+    if (!userId || !pushToken) {
+      console.warn('⚠️ Missing userId or pushToken, skipping save');
+      return;
+    }
 
+    const userRef = doc(db, 'users', userId);
+    const payload = {
+      pushToken: pushToken,
+      pushTokenUpdatedAt: serverTimestamp(),
+      devicePlatform: Platform.OS,
+      notificationsEnabled: true
+    };
+
+    try {
+      // Merge ensures we create the document if it does not exist
+      await setDoc(userRef, payload, { merge: true });
     } catch (error) {
       console.error('❌ Error saving push token:', error);
-      
-      // If user document doesn't exist, create it
-      try {
-        await setDoc(userRef, {
-          pushToken: pushToken,
-          pushTokenUpdatedAt: serverTimestamp(),
-          devicePlatform: Platform.OS,
-          notificationsEnabled: true
-        }, { merge: true });
-        
-      } catch (createError) {
-        console.error('❌ Error creating user document:', createError);
-      }
     }
   }
 
