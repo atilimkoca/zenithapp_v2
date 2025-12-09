@@ -17,7 +17,6 @@ import UniqueHeader from '../../components/UniqueHeader';
 import { useI18n } from '../../context/I18nContext';
 
 const FILTER_OPTIONS = [
-  { id: 'all', label: 'Tümü', icon: 'people-outline' },
   { id: 'approved', label: 'Aktif', icon: 'checkmark-circle-outline' },
   { id: 'pending', label: 'Beklemede', icon: 'time-outline' },
   { id: 'rejected', label: 'Reddedilen', icon: 'close-circle-outline' },
@@ -102,7 +101,7 @@ export default function AdminUserManagementScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [users, setUsers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState('all');
+  const [selectedFilter, setSelectedFilter] = useState('approved');
 
   useEffect(() => {
     loadUsers();
@@ -138,7 +137,7 @@ export default function AdminUserManagementScreen({ navigation }) {
         return false;
       }
 
-      const matchesStatus = selectedFilter === 'all' ? true : user.status === selectedFilter;
+      const matchesStatus = user.status === selectedFilter;
 
       if (!matchesStatus) return false;
 

@@ -401,14 +401,19 @@ export const adminService = {
       
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        
+
         // Only count regular users (members), exclude admins and trainers
         if (data.role === 'admin' || data.role === 'instructor') {
           return; // Skip admins and trainers
         }
-        
+
+        // Exclude permanently deleted members
+        if (data.status === 'permanently_deleted' || data.membershipStatus === 'deleted') {
+          return; // Skip deleted members
+        }
+
         total++;
-        
+
         switch (data.status) {
           case 'pending':
             pending++;
