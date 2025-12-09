@@ -136,14 +136,17 @@ class SimpleFirebaseListener {
 
   async triggerLocalNotification(notification, source) {
     try {
-      // Don't trigger notification if it came from mobile app (it already showed via push)
-      // Only trigger for web admin notifications
-      if (notification.source === 'mobile-admin' || notification.source === 'fcm-push') {
-        console.log('🚫 Skipping notification - already shown via push:', notification.id, 'source:', notification.source);
-        return true; // Return true but don't actually show it
+      // Don't trigger local notification if it will be/was sent via push
+      // Cloud Function handles push for: web-admin, cloud-function sources
+      // This prevents duplicate notifications
+      const pushSources = ['mobile-admin', 'fcm-push', 'web-admin', 'cloud-function', 'cloud-function-callable'];
+
+      if (pushSources.includes(notification.source)) {
+        console.log('🚫 Skipping local notification - will be delivered via push:', notification.id, 'source:', notification.source);
+        return true; // Return true but don't actually show it (push will handle it)
       }
-      
-      console.log('✅ Showing notification from', notification.source || 'web-admin', ':', notification.title);
+
+      console.log('✅ Showing local notification from', notification.source || 'unknown', ':', notification.title);
 
       const notificationId = await Notifications.scheduleNotificationAsync({
         content: {
