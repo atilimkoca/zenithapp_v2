@@ -19,7 +19,7 @@ export default ({ config }) => ({
   ios: {
     ...config.ios,
     bundleIdentifier: 'com.zenithstudio.app',
-    buildNumber: '1',
+    buildNumber: '2',
     supportsTablet: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
