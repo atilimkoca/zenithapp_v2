@@ -79,14 +79,16 @@ const getLessonAccessType = (lesson) => {
     return 'group';
   }
 
+  // Check lessonType first (this is the actual field in Firebase)
   const fromLesson = normalizePackageType(
-    lesson.lessonPackageType || lesson.packageType || lesson.type
+    lesson.lessonType || lesson.lessonPackageType || lesson.packageType || lesson.type
   );
 
   if (fromLesson) {
     return fromLesson;
   }
 
+  // Fallback: Check maxParticipants to determine lesson type
   if (typeof lesson.maxParticipants === 'number') {
     return lesson.maxParticipants <= 1 ? 'one-on-one' : 'group';
   }
@@ -160,7 +162,7 @@ const LessonCard = React.memo(({ lesson, userId, onBook, onCancel, t }) => {
                 <Ionicons name="person" size={16} color={colors.primary} />
               </View>
               <View style={styles.trainerDetails}>
-                <Text style={styles.trainerName}>🧘‍♀️ {lesson.instructor}</Text>
+                <Text style={styles.trainerName}>{lesson.instructor}</Text>
                 <Text style={styles.trainerTitle}>
                   {lesson.trainerSpecializations?.length > 0 ? lesson.trainerSpecializations[0] : ''}
                 </Text>
@@ -381,19 +383,40 @@ export default function ClassSelectionScreen() {
 
     let filtered = [...currentDayLessons];
 
-    // Filter by user's package type
+    // Filter by user's package type - ALWAYS apply this filter
     const rawPackageType = userData?.packageInfo?.packageType;
-    if (rawPackageType) {
-      const normalizedUserPackageType = normalizePackageType(rawPackageType);
-      const userAccessType = normalizedUserPackageType === 'one-on-one' ? 'one-on-one' : 'group';
+    const normalizedUserPackageType = normalizePackageType(rawPackageType);
+    // Default to 'group' if no package type is set
+    const userAccessType = normalizedUserPackageType === 'one-on-one' ? 'one-on-one' : 'group';
 
-      filtered = filtered.filter(lesson => {
-        const lessonAccessType = getLessonAccessType(lesson);
-        return userAccessType === 'one-on-one'
-          ? lessonAccessType === 'one-on-one'
-          : lessonAccessType !== 'one-on-one';
+    console.log('🔍 Filtering lessons:', {
+      totalLessons: currentDayLessons.length,
+      userPackageType: rawPackageType,
+      normalizedUserType: normalizedUserPackageType,
+      userAccessType: userAccessType
+    });
+
+    filtered = filtered.filter(lesson => {
+      const lessonAccessType = getLessonAccessType(lesson);
+      
+      console.log(`   Lesson "${lesson.title}":`, {
+        lessonType: lesson.lessonType,
+        lessonPackageType: lesson.lessonPackageType,
+        maxParticipants: lesson.maxParticipants,
+        resolvedAccessType: lessonAccessType,
+        matches: userAccessType === 'one-on-one' ? lessonAccessType === 'one-on-one' : lessonAccessType === 'group'
       });
-    }
+      
+      if (userAccessType === 'one-on-one') {
+        // One-on-one users can ONLY see one-on-one lessons
+        return lessonAccessType === 'one-on-one';
+      } else {
+        // Group users can ONLY see group lessons (not one-on-one)
+        return lessonAccessType === 'group';
+      }
+    });
+
+    console.log(`✅ Filtered to ${filtered.length} lessons matching user's ${userAccessType} package`);
 
     // Filter by search query
     if (debouncedSearchQuery.trim()) {
@@ -1051,6 +1074,7 @@ const styles = StyleSheet.create({
   },
   trainerDetails: {
     flex: 1,
+    paddingTop: 8,
   },
   trainerName: {
     fontSize: 14,
@@ -1062,6 +1086,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     fontWeight: '500',
+    marginTop: 2,
   },
 
   // Status Badges
