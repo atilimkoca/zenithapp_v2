@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChange, getCurrentUserData, logoutUser } from '../services/authService';
 import { db } from '../config/firebase';
+import { lessonService } from '../services/lessonService';
 
 const AuthContext = createContext({});
 
@@ -28,6 +29,9 @@ export const AuthProvider = ({ children }) => {
           // User is signed in
           setUser(authUser);
           setUserDataLoaded(false); // Reset user data loaded state
+          
+          // Preload lesson service supporting data in background for faster ClassSelectionScreen
+          lessonService.preloadSupportingData();
           
           // Get additional user data from Firestore
           const result = await getCurrentUserData(authUser.uid);

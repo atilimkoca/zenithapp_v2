@@ -11,7 +11,6 @@ import {
   RefreshControl,
   Animated,
   Dimensions,
-  InteractionManager,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -326,9 +325,13 @@ export default function ClassSelectionScreen() {
   const loadLessonsForDate = useCallback(async (dateKey) => {
     if (!dateKey) return;
 
-    setLoadingLessons(true);
+    // Don't show loading spinner if we have cached data
+    const result = await lessonService.getLessonsByDate(dateKey);
+    if (!result.fromCache) {
+      setLoadingLessons(true);
+    }
+    
     try {
-      const result = await lessonService.getLessonsByDate(dateKey);
       if (result.success) {
         // Add formatted date to each lesson
         const lessonsWithFormattedDate = result.lessons.map(lesson => ({
@@ -345,29 +348,56 @@ export default function ClassSelectionScreen() {
     }
   }, [formatDisplayDate]);
 
-  // Initial load - get dates first, then load first day's lessons
+  // Initial load - FAST: single optimized fetch
   useEffect(() => {
-    const interactionPromise = InteractionManager.runAfterInteractions(async () => {
+    const loadInitialData = async () => {
+      const startTime = Date.now();
+      console.log('⚡ ClassSelectionScreen: Starting initial load...');
       try {
-        const result = await lessonService.getAvailableDates();
+        // Use ultra-optimized single fetch for initial load
+        const result = await lessonService.getInitialData();
+        console.log(`⚡ ClassSelectionScreen: getInitialData completed in ${Date.now() - startTime}ms`);
         if (result.success && result.dates.length > 0) {
           setAvailableDates(result.dates);
           const firstDate = result.dates[0];
           setSelectedDateKey(firstDate);
-          await loadLessonsForDate(firstDate);
+          
+          // Lessons are already loaded and cached, just format them
+          const cachedLessons = result.lessonsByDate[firstDate] || [];
+          const lessonsWithFormattedDate = cachedLessons.map(lesson => ({
+            ...lesson,
+            formattedDate: formatDisplayDate(lesson.scheduledDate),
+          }));
+          setCurrentDayLessons(lessonsWithFormattedDate);
+          loadedDatesRef.current.add(firstDate);
         }
       } catch (error) {
         console.error('Error in initial load:', error);
       } finally {
         setLoading(false);
       }
-    });
-    return () => interactionPromise.cancel();
+    };
+    
+    loadInitialData();
   }, []);
 
-  // Load lessons when selected date changes
+  // Track the initial date to avoid double-loading
+  const initialDateRef = useRef(null);
+
+  // Load lessons when selected date changes (but not for initial load)
   useEffect(() => {
-    if (selectedDateKey && !loading) {
+    // Skip if still loading or no date selected
+    if (loading || !selectedDateKey) return;
+    
+    // Skip the first call after initial load (lessons already loaded)
+    if (initialDateRef.current === null) {
+      initialDateRef.current = selectedDateKey;
+      return;
+    }
+    
+    // Only fetch if date actually changed
+    if (selectedDateKey !== initialDateRef.current) {
+      initialDateRef.current = selectedDateKey;
       loadLessonsForDate(selectedDateKey);
     }
   }, [selectedDateKey, loading, loadLessonsForDate]);

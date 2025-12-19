@@ -1,4 +1,10 @@
 ﻿export default {
+  // 🎄 Christmas - Remove after Christmas
+  christmas: {
+    greeting: 'Merry Christmas! 🎅',
+    happyNewYear: 'Happy New Year!',
+  },
+  
   // General
   loading: 'Loading...',
   save: 'Save',

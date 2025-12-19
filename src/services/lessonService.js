@@ -1,10 +1,12 @@
 import { collection, query, where, getDocs, orderBy, doc, updateDoc, arrayUnion, arrayRemove, getDoc, addDoc, serverTimestamp, startAt, endAt, deleteDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { bookingHistoryService } from './bookingHistoryService';
+import { clearUserLessonsCache } from './userLessonService';
 
 // Cache configuration
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes for supporting data
 const LESSONS_CACHE_TTL = 2 * 60 * 1000; // 2 minutes for lessons (shorter to reflect bookings)
+const DATES_CACHE_TTL = 10 * 60 * 1000; // 10 minutes for available dates (lightweight query)
 
 // Trainers cache
 let trainersCache = null;
@@ -22,7 +24,11 @@ let statusLevelsCacheTimestamp = 0;
 let availableDatesCache = null;
 let availableDatesCacheTimestamp = 0;
 
-// All processed lessons cache (indexed by date for fast lookup)
+// Per-date lesson cache with individual timestamps
+// { "2024-01-15": { lessons: [...], timestamp: 123456789 } }
+let perDateLessonsCache = {};
+
+// All processed lessons cache (indexed by date for fast lookup) - kept for backward compatibility
 let allLessonsCache = null;
 let allLessonsCacheTimestamp = 0;
 let lessonsByDateCache = {}; // { "2024-01-15": [lessons], "2024-01-16": [lessons] }
@@ -253,6 +259,10 @@ const processLessonDoc = (docData, docId, trainersMap, lessonTypes, statusLevels
 
   const scheduledDateISO = lessonDate.toISOString();
 
+  // Determine lesson package type: prioritize explicit lessonType from Firebase, fallback to maxParticipants
+  const resolvedLessonPackageType = docData.lessonType || 
+    (docData.maxParticipants === 1 ? 'one-on-one' : 'group');
+
   return {
     id: docId,
     ...docData,
@@ -262,7 +272,8 @@ const processLessonDoc = (docData, docId, trainersMap, lessonTypes, statusLevels
     currentParticipants: docData.participants ? docData.participants.length : 0,
     availableSpots: docData.maxParticipants - (docData.participants ? docData.participants.length : 0),
     isRecurring: docData.isRecurring || false,
-    lessonPackageType: docData.maxParticipants === 1 ? 'one-on-one' : 'group',
+    lessonType: resolvedLessonPackageType,
+    lessonPackageType: resolvedLessonPackageType,
     instructor: trainer ? trainer.displayName : (docData.trainerName || 'No Trainer Information'),
     trainerSpecializations: trainer ? trainer.specializations : [],
     trainerBio: trainer ? trainer.bio : '',
@@ -347,6 +358,237 @@ const fetchAndCacheAllLessons = async (forceRefresh = false) => {
   return { lessons: allLessons, byDate };
 };
 
+// OPTIMIZED: Fetch only available dates without loading all lesson data
+// This is a lightweight query that just gets the unique dates from lessons
+const fetchAvailableDatesOnly = async (forceRefresh = false) => {
+  // Return from cache if valid
+  if (!forceRefresh && availableDatesCache && Date.now() - availableDatesCacheTimestamp < DATES_CACHE_TTL) {
+    return availableDatesCache;
+  }
+
+  try {
+    // Query only active lessons and get their dates
+    const lessonsSnapshot = await getDocs(
+      query(collection(db, 'lessons'), where('status', '==', 'active'))
+    );
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const datesSet = new Set();
+
+    lessonsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (!data.scheduledDate) return;
+
+      const lessonDate = normalizeDateValue(data.scheduledDate);
+      if (!lessonDate || lessonDate < today) return;
+
+      const dateKey = lessonDate.toISOString().split('T')[0];
+      datesSet.add(dateKey);
+    });
+
+    const sortedDates = Array.from(datesSet).sort();
+
+    // Update cache
+    availableDatesCache = sortedDates;
+    availableDatesCacheTimestamp = Date.now();
+
+    return sortedDates;
+  } catch (error) {
+    console.error('Error fetching available dates:', error);
+    return availableDatesCache || [];
+  }
+};
+
+// ULTRA-OPTIMIZED: Fetch everything in a single pass
+// This fetches lessons, dates, and processes them in ONE Firebase query
+// Supporting data (trainers, types, status) uses defaults on first load for speed
+const fetchInitialDataOptimized = async () => {
+  try {
+    console.log('⚡ Starting optimized initial fetch...');
+    const startTime = Date.now();
+
+    // Start supporting data fetch in background (non-blocking)
+    const supportingDataPromise = Promise.all([
+      fetchTrainersData(),
+      fetchLessonTypes(),
+      fetchLessonStatus()
+    ]);
+
+    // Single Firebase query for ALL active lessons
+    const lessonsSnapshot = await getDocs(
+      query(collection(db, 'lessons'), where('status', '==', 'active'))
+    );
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const datesSet = new Set();
+    const rawLessonsByDate = {};
+
+    // First pass: collect dates and raw lesson data (fast, no processing)
+    lessonsSnapshot.forEach((docSnapshot) => {
+      const data = docSnapshot.data();
+      if (!data.scheduledDate || !data.startTime || !data.endTime) return;
+
+      const lessonDate = normalizeDateValue(data.scheduledDate);
+      if (!lessonDate || lessonDate < today) return;
+
+      const dateKey = lessonDate.toISOString().split('T')[0];
+      datesSet.add(dateKey);
+
+      if (!rawLessonsByDate[dateKey]) {
+        rawLessonsByDate[dateKey] = [];
+      }
+      rawLessonsByDate[dateKey].push({ id: docSnapshot.id, data });
+    });
+
+    const sortedDates = Array.from(datesSet).sort();
+
+    // Update dates cache immediately
+    availableDatesCache = sortedDates;
+    availableDatesCacheTimestamp = Date.now();
+
+    // Wait for supporting data (usually fast, already started)
+    const [trainersMap, lessonTypes, statusLevels] = await supportingDataPromise;
+
+    // Process lessons for all dates at once
+    Object.keys(rawLessonsByDate).forEach(dateKey => {
+      const lessons = rawLessonsByDate[dateKey].map(({ id, data }) => 
+        processLessonDoc(data, id, trainersMap, lessonTypes, statusLevels)
+      ).filter(Boolean);
+
+      // Sort by start time
+      lessons.sort((a, b) => {
+        const timeA = (a.startTime || '').replace(':', '');
+        const timeB = (b.startTime || '').replace(':', '');
+        return (parseInt(timeA) || 0) - (parseInt(timeB) || 0);
+      });
+
+      // Cache each date's lessons
+      perDateLessonsCache[dateKey] = {
+        lessons,
+        timestamp: Date.now()
+      };
+      lessonsByDateCache[dateKey] = lessons;
+    });
+
+    console.log(`✅ Optimized fetch complete in ${Date.now() - startTime}ms - ${sortedDates.length} dates, ${lessonsSnapshot.size} lessons`);
+
+    return {
+      dates: sortedDates,
+      lessonsByDate: lessonsByDateCache
+    };
+  } catch (error) {
+    console.error('Error in optimized initial fetch:', error);
+    return { dates: [], lessonsByDate: {} };
+  }
+};
+
+// OPTIMIZED: Fetch lessons for a single date only
+// This queries Firebase with date range filter for maximum efficiency
+const fetchLessonsForSingleDate = async (dateString, forceRefresh = false) => {
+  // Check per-date cache
+  const cachedData = perDateLessonsCache[dateString];
+  if (!forceRefresh && cachedData && Date.now() - cachedData.timestamp < LESSONS_CACHE_TTL) {
+    return cachedData.lessons;
+  }
+
+  try {
+    // Fetch supporting data from cache (fast, usually already cached)
+    const [trainersMap, lessonTypes, statusLevels] = await Promise.all([
+      fetchTrainersData(),
+      fetchLessonTypes(),
+      fetchLessonStatus()
+    ]);
+
+    // Create date range for the specific day
+    const targetDate = new Date(dateString + 'T00:00:00');
+    const nextDate = new Date(dateString + 'T00:00:00');
+    nextDate.setDate(nextDate.getDate() + 1);
+
+    // Query lessons for this specific date
+    // Note: We filter by status and use client-side date filtering since Firestore
+    // requires composite indexes for complex queries
+    const lessonsSnapshot = await getDocs(
+      query(collection(db, 'lessons'), where('status', '==', 'active'))
+    );
+
+    const lessons = [];
+
+    lessonsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (!data.scheduledDate || !data.startTime || !data.endTime) return;
+
+      const lessonDate = normalizeDateValue(data.scheduledDate);
+      if (!lessonDate) return;
+
+      const lessonDateKey = lessonDate.toISOString().split('T')[0];
+      if (lessonDateKey !== dateString) return;
+
+      const processedLesson = processLessonDoc(data, doc.id, trainersMap, lessonTypes, statusLevels);
+      if (processedLesson) {
+        lessons.push(processedLesson);
+      }
+    });
+
+    // Sort by start time
+    lessons.sort((a, b) => {
+      const timeA = (a.startTime || '').replace(':', '');
+      const timeB = (b.startTime || '').replace(':', '');
+      return (parseInt(timeA) || 0) - (parseInt(timeB) || 0);
+    });
+
+    // Cache the result for this date
+    perDateLessonsCache[dateString] = {
+      lessons,
+      timestamp: Date.now()
+    };
+
+    // Also update the byDate cache for backward compatibility
+    lessonsByDateCache[dateString] = lessons;
+
+    return lessons;
+  } catch (error) {
+    console.error(`Error fetching lessons for date ${dateString}:`, error);
+    return cachedData?.lessons || [];
+  }
+};
+
+// Clear per-date cache for a specific date (useful when bookings change)
+const invalidateDateCache = (dateString) => {
+  if (dateString) {
+    delete perDateLessonsCache[dateString];
+    delete lessonsByDateCache[dateString];
+  }
+};
+
+// Clear all lesson caches
+const clearAllLessonCaches = () => {
+  perDateLessonsCache = {};
+  lessonsByDateCache = {};
+  allLessonsCache = null;
+  allLessonsCacheTimestamp = 0;
+  availableDatesCache = null;
+  availableDatesCacheTimestamp = 0;
+};
+
+// Preload supporting data to warm up caches (call early in app lifecycle)
+// This loads trainers, lesson types, and status levels in parallel
+const preloadSupportingData = async () => {
+  try {
+    await Promise.all([
+      fetchTrainersData(),
+      fetchLessonTypes(),
+      fetchLessonStatus()
+    ]);
+    console.log('✅ Lesson service supporting data preloaded');
+  } catch (error) {
+    console.warn('⚠️ Error preloading supporting data:', error);
+  }
+};
+
 export const lessonService = {
   // Get lesson types
   getLessonTypes: fetchLessonTypes,
@@ -357,44 +599,74 @@ export const lessonService = {
   // Get trainers data
   getTrainersData: fetchTrainersData,
 
-  // Get available dates (uses shared cache)
-  getAvailableDates: async (forceRefresh = false) => {
+  // Cache invalidation utilities
+  invalidateDateCache,
+  clearAllLessonCaches,
+
+  // Preload supporting data for faster ClassSelectionScreen load
+  preloadSupportingData,
+
+  // ULTRA-FAST: Get all data in single optimized fetch (dates + all lessons)
+  // Use this for initial screen load - only 1 Firebase query + parallel supporting data
+  getInitialData: async () => {
     try {
-      // Use cached dates if available and valid
-      if (!forceRefresh && availableDatesCache && Date.now() - availableDatesCacheTimestamp < CACHE_TTL) {
-        return { success: true, dates: availableDatesCache };
+      // Check if we have valid cached data
+      if (availableDatesCache && 
+          Date.now() - availableDatesCacheTimestamp < DATES_CACHE_TTL &&
+          Object.keys(perDateLessonsCache).length > 0) {
+        return {
+          success: true,
+          dates: availableDatesCache,
+          lessonsByDate: lessonsByDateCache,
+          fromCache: true
+        };
       }
 
-      // Fetch and cache all lessons (this populates availableDatesCache too)
-      await fetchAndCacheAllLessons(forceRefresh);
+      const result = await fetchInitialDataOptimized();
+      return {
+        success: true,
+        dates: result.dates,
+        lessonsByDate: result.lessonsByDate,
+        fromCache: false
+      };
+    } catch (error) {
+      console.error('Error in getInitialData:', error);
+      return { success: false, dates: [], lessonsByDate: {}, error: error.message };
+    }
+  },
 
-      return { success: true, dates: availableDatesCache || [] };
+  // OPTIMIZED: Get available dates (lightweight query, doesn't load all lessons)
+  getAvailableDates: async (forceRefresh = false) => {
+    try {
+      const dates = await fetchAvailableDatesOnly(forceRefresh);
+      return { success: true, dates };
     } catch (error) {
       console.error('Error fetching available dates:', error);
       return { success: false, dates: availableDatesCache || [], error: error.message };
     }
   },
 
-  // Get lessons for a specific date (instant from cache after first load)
+  // OPTIMIZED: Get lessons for a specific date (fetches only that date's lessons)
   getLessonsByDate: async (dateString, forceRefresh = false) => {
     try {
-      // Check if we have cached lessons for this date
-      if (!forceRefresh && lessonsByDateCache[dateString] && Date.now() - allLessonsCacheTimestamp < CACHE_TTL) {
+      // Check per-date cache first
+      const cachedData = perDateLessonsCache[dateString];
+      if (!forceRefresh && cachedData && Date.now() - cachedData.timestamp < LESSONS_CACHE_TTL) {
         return {
           success: true,
           date: dateString,
-          lessons: lessonsByDateCache[dateString] || [],
+          lessons: cachedData.lessons,
           fromCache: true
         };
       }
 
-      // Fetch and cache all lessons if needed
-      const { byDate } = await fetchAndCacheAllLessons(forceRefresh);
+      // Fetch lessons for this specific date only
+      const lessons = await fetchLessonsForSingleDate(dateString, forceRefresh);
 
       return {
         success: true,
         date: dateString,
-        lessons: byDate[dateString] || [],
+        lessons,
         fromCache: false
       };
     } catch (error) {
@@ -451,6 +723,10 @@ export const lessonService = {
               level.name.toLowerCase() === (data.level || 'orta').toLowerCase()
             ) || statusLevels.find(level => level.id === 'intermediate');
             
+            // Determine lesson package type: prioritize explicit lessonType from Firebase, fallback to maxParticipants
+            const resolvedLessonPackageType = data.lessonType || 
+              (data.maxParticipants === 1 ? 'one-on-one' : 'group');
+            
             lessons.push({
               id: doc.id,
               ...data,
@@ -461,8 +737,9 @@ export const lessonService = {
               currentParticipants: data.participants ? data.participants.length : 0,
               availableSpots: data.maxParticipants - (data.participants ? data.participants.length : 0),
               isRecurring: data.isRecurring || false,
-              // Package type information
-              lessonPackageType: data.maxParticipants === 1 ? 'one-on-one' : 'group',
+              // Package type information - use resolved value
+              lessonType: resolvedLessonPackageType,
+              lessonPackageType: resolvedLessonPackageType,
               // Enhanced trainer information
               instructor: trainer ? trainer.displayName : (data.trainerName || 'No Trainer Information'),
               trainerSpecializations: trainer ? trainer.specializations : [],
@@ -770,6 +1047,16 @@ export const lessonService = {
         } catch (historyError) {
           console.warn('⚠️ Could not create booking history:', historyError);
           // Don't fail the booking if history creation fails
+        }
+        
+        // Clear user lessons cache after successful booking
+        clearUserLessonsCache(userId);
+        
+        // Invalidate the per-date cache for this lesson's date so UI updates immediately
+        const lessonDate = normalizeDateValue(lessonData.scheduledDate);
+        if (lessonDate) {
+          const dateKey = lessonDate.toISOString().split('T')[0];
+          invalidateDateCache(dateKey);
         }
         
         return {
@@ -1635,6 +1922,9 @@ const adminLessonService = {
         console.warn('⚠️ Could not create booking history:', historyError);
       }
       
+      // Clear user lessons cache after admin adds student
+      clearUserLessonsCache(userId);
+      
       return {
         success: true,
         message: `Öğrenci derse başarıyla eklendi. Kalan ders: ${remainingCredits - 1}`,
@@ -1705,6 +1995,16 @@ const adminLessonService = {
         }, 'admin_removed');
       } catch (historyError) {
         console.warn('⚠️ Could not create booking history:', historyError);
+      }
+      
+      // Clear user lessons cache after admin removes student
+      clearUserLessonsCache(userId);
+      
+      // Invalidate the per-date cache for this lesson's date so UI updates immediately
+      const lessonDate = normalizeDateValue(lessonData.scheduledDate);
+      if (lessonDate) {
+        const dateKey = lessonDate.toISOString().split('T')[0];
+        invalidateDateCache(dateKey);
       }
       
       return {

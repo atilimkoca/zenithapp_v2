@@ -2,6 +2,19 @@ import { collection, query, where, getDocs, orderBy, doc, getDoc, updateDoc, arr
 import { db } from '../config/firebase';
 import { bookingHistoryService } from './bookingHistoryService';
 
+// Cache configuration for performance
+const CACHE_TTL = 60 * 1000; // 1 minute cache for user lessons
+let userLessonsCache = {};
+let userLessonsCacheTimestamp = {};
+
+// Clear cache for a specific user (call after booking/cancellation)
+export const clearUserLessonsCache = (userId) => {
+  if (userId) {
+    delete userLessonsCache[userId];
+    delete userLessonsCacheTimestamp[userId];
+  }
+};
+
 // Helper function to format date
 const formatDate = (dateString) => {
   if (!dateString) return 'Tarih belirtilmemiş';
@@ -69,50 +82,58 @@ const getLessonTypeInfo = (title, type) => {
 };
 
 export const userLessonService = {
-  // Get user's lesson history (completed, upcoming, cancelled)
-  getUserLessons: async (userId) => {
+  // OPTIMIZED: Get user's lesson history using array-contains query with caching
+  getUserLessons: async (userId, options = {}) => {
+    const { forceRefresh = false } = options;
+    
     try {
+      // Check cache first (unless force refresh)
+      if (!forceRefresh && userLessonsCache[userId] && 
+          Date.now() - userLessonsCacheTimestamp[userId] < CACHE_TTL) {
+        return userLessonsCache[userId];
+      }
       
-      // Get all lessons from Firestore
+      // OPTIMIZED: Use array-contains query instead of fetching ALL lessons
       const lessonsCollection = collection(db, 'lessons');
-      const querySnapshot = await getDocs(lessonsCollection);
+      const userLessonsQuery = query(
+        lessonsCollection,
+        where('participants', 'array-contains', userId)
+      );
+      
+      const querySnapshot = await getDocs(userLessonsQuery);
       
       const userLessons = [];
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const now = new Date();
       
-      querySnapshot.forEach((doc) => {
-        const lessonData = doc.data();
+      querySnapshot.forEach((docSnapshot) => {
+        const lessonData = docSnapshot.data();
         
-        // Check if user is in participants array
-        if (lessonData.participants && Array.isArray(lessonData.participants) && 
-            lessonData.participants.includes(userId)) {
-          
-          // Create lesson object with enhanced data
-          const lesson = {
-            id: doc.id,
-            ...lessonData,
-            formattedDate: formatDate(lessonData.scheduledDate),
-            formattedTime: `${lessonData.startTime} - ${lessonData.endTime}`,
-            currentParticipants: lessonData.participants ? lessonData.participants.length : 0,
-            typeInfo: getLessonTypeInfo(lessonData.title, lessonData.type)
-          };
-          
-          // Determine lesson status based on date and time
-          if (lessonData.scheduledDate) {
-            try {
-              // Create lesson date and time more carefully
-              let lessonDateTime;
-              
-              // Handle different date formats
-              if (lessonData.scheduledDate.includes('T')) {
-                // ISO format: 2025-09-08T00:00:00.000Z
-                const dateOnly = lessonData.scheduledDate.split('T')[0];
-                lessonDateTime = new Date(`${dateOnly}T${lessonData.endTime || lessonData.startTime}:00`);
-              } else {
-                // Simple format: 2025-09-08
-                lessonDateTime = new Date(`${lessonData.scheduledDate}T${lessonData.endTime || lessonData.startTime}:00`);
-              }
+        // No need to check participants - query already filtered by array-contains
+        // Create lesson object with enhanced data
+        const lesson = {
+          id: docSnapshot.id,
+          ...lessonData,
+          formattedDate: formatDate(lessonData.scheduledDate),
+          formattedTime: `${lessonData.startTime} - ${lessonData.endTime}`,
+          currentParticipants: lessonData.participants ? lessonData.participants.length : 0,
+          typeInfo: getLessonTypeInfo(lessonData.title, lessonData.type)
+        };
+        
+        // Determine lesson status based on date and time
+        if (lessonData.scheduledDate) {
+          try {
+            // Create lesson date and time more carefully
+            let lessonDateTime;
+            
+            // Handle different date formats
+            if (lessonData.scheduledDate.includes('T')) {
+              // ISO format: 2025-09-08T00:00:00.000Z
+              const dateOnly = lessonData.scheduledDate.split('T')[0];
+              lessonDateTime = new Date(`${dateOnly}T${lessonData.endTime || lessonData.startTime}:00`);
+            } else {
+              // Simple format: 2025-09-08
+              lessonDateTime = new Date(`${lessonData.scheduledDate}T${lessonData.endTime || lessonData.startTime}:00`);
+            }
               
               const now = new Date();
               
@@ -152,39 +173,10 @@ export const userLessonService = {
           }
           
           userLessons.push(lesson);
-        }
       });
       
-      // Also check for any user-specific booking records (if exists)
-      try {
-        const userBookingsCollection = collection(db, 'userBookings');
-        const userBookingsQuery = query(userBookingsCollection, where('userId', '==', userId));
-        const bookingsSnapshot = await getDocs(userBookingsQuery);
-        
-        bookingsSnapshot.forEach((doc) => {
-          const booking = doc.data();
-          // Check if this booking isn't already in the lessons array
-          const existingLesson = userLessons.find(l => l.id === booking.lessonId);
-          if (!existingLesson && booking.lessonData) {
-            // Add historical booking data
-            const historyLesson = {
-              id: booking.lessonId || doc.id,
-              ...booking.lessonData,
-              formattedDate: formatDate(booking.lessonData.scheduledDate),
-              formattedTime: `${booking.lessonData.startTime} - ${booking.lessonData.endTime}`,
-              currentParticipants: booking.lessonData.currentParticipants || 0,
-              typeInfo: getLessonTypeInfo(booking.lessonData.title, booking.lessonData.type),
-              userStatus: booking.status || 'completed', // Historical bookings are usually completed
-              bookingDate: booking.bookingDate,
-              cancelledDate: booking.cancelledDate,
-              reason: booking.cancelReason
-            };
-            
-            userLessons.push(historyLesson);
-          }
-        });
-      } catch (bookingError) {
-      }
+      // Skip userBookings query for better performance - lessons query is now optimized
+      // The array-contains query already returns all relevant lessons
       
       // Sort lessons by date and time
       userLessons.sort((a, b) => {
@@ -222,8 +214,7 @@ export const userLessonService = {
       // Calculate total lessons excluding cancelled ones
       const activeLessons = completedLessons.length + upcomingLessons.length;
       
-      
-      return {
+      const result = {
         success: true,
         lessons: {
           all: userLessons,
@@ -238,12 +229,116 @@ export const userLessonService = {
           cancelledCount: cancelledLessons.length
         }
       };
+      
+      // Cache the result for future requests
+      userLessonsCache[userId] = result;
+      userLessonsCacheTimestamp[userId] = Date.now();
+      
+      return result;
     } catch (error) {
       console.error('Error getting user lessons:', error);
       return {
         success: false,
         error: error.code,
         message: 'Dersleriniz yüklenirken hata oluştu.'
+      };
+    }
+  },
+
+  // FAST: Get only upcoming lessons for overview (optimized for initial load)
+  getUpcomingLessonsOnly: async (userId, maxCount = 3) => {
+    try {
+      // Use cache if available
+      if (userLessonsCache[userId] && 
+          Date.now() - userLessonsCacheTimestamp[userId] < CACHE_TTL) {
+        const cached = userLessonsCache[userId];
+        return {
+          success: true,
+          lessons: cached.lessons?.upcoming?.slice(0, maxCount) || [],
+          stats: cached.stats
+        };
+      }
+      
+      const now = new Date();
+      
+      // OPTIMIZED: Query only user's lessons with array-contains (no compound index needed)
+      const lessonsCollection = collection(db, 'lessons');
+      const userLessonsQuery = query(
+        lessonsCollection,
+        where('participants', 'array-contains', userId)
+      );
+      
+      const querySnapshot = await getDocs(userLessonsQuery);
+      const upcomingLessons = [];
+      
+      querySnapshot.forEach((docSnapshot) => {
+        const lessonData = docSnapshot.data();
+        
+        // Skip cancelled lessons
+        if (lessonData.status === 'cancelled') return;
+        
+        // Check if lesson is actually upcoming (not past)
+        try {
+          let lessonDateTime;
+          if (lessonData.scheduledDate?.includes('T')) {
+            const dateOnly = lessonData.scheduledDate.split('T')[0];
+            lessonDateTime = new Date(`${dateOnly}T${lessonData.endTime || lessonData.startTime}:00`);
+          } else if (lessonData.scheduledDate) {
+            lessonDateTime = new Date(`${lessonData.scheduledDate}T${lessonData.endTime || lessonData.startTime}:00`);
+          } else {
+            return; // Skip lessons without date
+          }
+          
+          if (lessonDateTime <= now) return; // Skip past lessons
+        } catch (e) {
+          // If date parsing fails, include the lesson
+        }
+        
+        upcomingLessons.push({
+          id: docSnapshot.id,
+          ...lessonData,
+          formattedDate: formatDate(lessonData.scheduledDate),
+          formattedTime: `${lessonData.startTime} - ${lessonData.endTime}`,
+          currentParticipants: lessonData.participants ? lessonData.participants.length : 0,
+          typeInfo: getLessonTypeInfo(lessonData.title, lessonData.type),
+          userStatus: 'upcoming'
+        });
+      });
+      
+      // Sort by date in memory (no index needed)
+      upcomingLessons.sort((a, b) => {
+        const dateA = new Date(`${a.scheduledDate}T${a.startTime || '00:00'}`);
+        const dateB = new Date(`${b.scheduledDate}T${b.startTime || '00:00'}`);
+        return dateA - dateB;
+      });
+      
+      return {
+        success: true,
+        lessons: upcomingLessons.slice(0, maxCount),
+        stats: {
+          upcomingCount: upcomingLessons.length
+        }
+      };
+    } catch (error) {
+      console.error('Error getting upcoming lessons:', error);
+      // Fallback to full query if optimized query fails
+      try {
+        const fullResult = await userLessonService.getUserLessons(userId);
+        if (fullResult.success) {
+          return {
+            success: true,
+            lessons: fullResult.lessons?.upcoming?.slice(0, maxCount) || [],
+            stats: fullResult.stats
+          };
+        }
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+      }
+      return {
+        success: false,
+        error: error.code,
+        lessons: [],
+        stats: { upcomingCount: 0 }
       };
     }
   },
@@ -329,6 +424,23 @@ export const userLessonService = {
       } catch (historyError) {
         console.warn('⚠️ Could not update booking history:', historyError);
         // Don't fail the cancellation if history update fails
+      }
+      
+      // Clear cache after cancellation so next fetch gets fresh data
+      clearUserLessonsCache(userId);
+      
+      // Invalidate the per-date cache in lessonService for this lesson's date
+      try {
+        const { lessonService } = await import('./lessonService');
+        if (lessonData.scheduledDate) {
+          const lessonDate = new Date(lessonData.scheduledDate);
+          if (!isNaN(lessonDate.getTime())) {
+            const dateKey = lessonDate.toISOString().split('T')[0];
+            lessonService.invalidateDateCache(dateKey);
+          }
+        }
+      } catch (cacheError) {
+        console.warn('⚠️ Could not invalidate lesson cache:', cacheError);
       }
       
       return {

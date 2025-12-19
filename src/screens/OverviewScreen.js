@@ -68,19 +68,24 @@ export default function OverviewScreen({ navigation }) {
     }
     
     try {
-      // Load user credits and lessons in parallel
-      const [creditsResult, lessonsResult] = await Promise.all([
+      // OPTIMIZED: Load credits first (fast), then lessons
+      // Use the optimized getUpcomingLessonsOnly for initial load
+      const [creditsResult, upcomingResult] = await Promise.all([
         lessonCreditsService.getUserCredits(user.uid),
-        userLessonService.getUserLessons(user.uid)
+        isRefresh 
+          ? userLessonService.getUserLessons(user.uid, { forceRefresh: true })
+          : userLessonService.getUpcomingLessonsOnly(user.uid, 3)
       ]);
 
       if (creditsResult.success) {
         setRemainingCredits(creditsResult.credits);
       }
 
-      if (lessonsResult.success) {
-        // Get upcoming lessons only (limit to 3 for overview)
-        const upcoming = lessonsResult.lessons?.upcoming || [];
+      if (upcomingResult.success) {
+        // Get upcoming lessons - either from optimized query or full query
+        const upcoming = isRefresh 
+          ? (upcomingResult.lessons?.upcoming || []).slice(0, 3)
+          : (upcomingResult.lessons || []);
         
         // Translate lesson data based on current locale
         const translatedUpcoming = upcoming.map(lesson => ({
@@ -92,12 +97,12 @@ export default function OverviewScreen({ navigation }) {
           formattedDate: formatLocalizedDate(lesson.scheduledDate || lesson.formattedDate, locale, t),
         }));
         
-        setUpcomingLessons(translatedUpcoming.slice(0, 3));
+        setUpcomingLessons(translatedUpcoming);
         
         // Set monthly stats from the lessons result
         setMonthlyStats({
-          totalLessons: lessonsResult.stats?.totalLessons || 0,
-          completedCount: lessonsResult.stats?.completedCount || 0
+          totalLessons: upcomingResult.stats?.totalLessons || 0,
+          completedCount: upcomingResult.stats?.completedCount || 0
         });
       }
     } catch (error) {

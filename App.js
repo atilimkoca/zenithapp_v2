@@ -5,6 +5,8 @@ import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, Text } from 'react-native';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
+// 🎄 Christmas Effects - Remove or disable after Christmas
+import { ChristmasWrapper } from './src/components/christmas';
 import PendingApprovalScreen from './src/screens/PendingApprovalScreen';
 import TermsScreen from './src/screens/TermsScreen';
 import PrivacyScreen from './src/screens/PrivacyScreen';
@@ -261,8 +263,11 @@ export default function App() {
       <AuthProvider>
         <NotificationProvider>
           <NavigationContainer>
-            <StatusBar style="dark" backgroundColor={colors.background} />
-            <Navigation />
+            {/* 🎄 Christmas Wrapper - Remove or set enabled: false in christmasConfig.js after Christmas */}
+            <ChristmasWrapper>
+              <StatusBar style="dark" backgroundColor={colors.background} />
+              <Navigation />
+            </ChristmasWrapper>
           </NavigationContainer>
         </NotificationProvider>
       </AuthProvider>

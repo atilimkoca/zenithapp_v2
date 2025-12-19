@@ -1,4 +1,10 @@
 export default {
+  // 🎄 Christmas - Remove after Christmas
+  christmas: {
+    greeting: 'Mutlu Noeller! 🎅',
+    happyNewYear: 'Yeni yılınız kutlu olsun!',
+  },
+  
   // General
   loading: 'Yükleniyor...',
   save: 'Kaydet',
