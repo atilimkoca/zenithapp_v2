@@ -272,23 +272,19 @@ export const userLessonService = {
         };
       }
       
-      // Check if lesson can be cancelled (e.g., not too close to start time)
+      // Check if lesson can be cancelled (must be at least 8 hours before start time)
       try {
-        let lessonDateTime;
-        
-        // Handle different date formats for cancellation check
-        if (lessonData.scheduledDate.includes('T')) {
-          const dateOnly = lessonData.scheduledDate.split('T')[0];
-          lessonDateTime = new Date(`${dateOnly}T${lessonData.startTime}:00`);
-        } else {
-          lessonDateTime = new Date(`${lessonData.scheduledDate}T${lessonData.startTime}:00`);
+        // Create lesson datetime by combining scheduledDate with startTime
+        const lessonDateTime = new Date(lessonData.scheduledDate);
+        if (lessonData.startTime) {
+          const [hours, minutes] = lessonData.startTime.split(':').map(Number);
+          lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);
         }
-        
+
         const now = new Date();
         const timeDiff = lessonDateTime.getTime() - now.getTime();
         const hoursUntilLesson = timeDiff / (1000 * 60 * 60);
-        
-        
+
         if (hoursUntilLesson < 8) {
           return {
             success: false,

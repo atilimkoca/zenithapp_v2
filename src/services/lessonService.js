@@ -716,7 +716,31 @@ export const lessonService = {
           message: 'Bu derse zaten kayıtlısınız.'
         };
       }
-      
+
+      // Check if lesson is too close to start (must be at least 2 hours before)
+      try {
+        const lessonDateTime = new Date(lessonData.scheduledDate);
+        if (lessonData.startTime) {
+          const [hours, minutes] = lessonData.startTime.split(':').map(Number);
+          lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);
+        }
+
+        const now = new Date();
+        const timeDiff = lessonDateTime.getTime() - now.getTime();
+        const hoursUntilLesson = timeDiff / (1000 * 60 * 60);
+
+        if (hoursUntilLesson < 2) {
+          return {
+            success: false,
+            messageKey: 'classSelection.tooLateToBook',
+            message: 'Reservations can only be made up to 2 hours before the lesson starts.'
+          };
+        }
+      } catch (timeError) {
+        console.warn('Time check error:', timeError);
+        // If we can't check time properly, allow booking
+      }
+
       // Consume user credit first (atomic operation)
       const creditResult = await lessonCreditsService.consumeUserCredit(
         userId, 
