@@ -1566,30 +1566,9 @@ const adminLessonService = {
       }
       
       const lessonData = lessonDoc.data();
-      
-      // Check if lesson is in the past
-      const now = new Date();
-      if (lessonData.scheduledDate && lessonData.startTime) {
-        let lessonDate;
-        if (typeof lessonData.scheduledDate === 'string') {
-          lessonDate = new Date(lessonData.scheduledDate);
-        } else if (lessonData.scheduledDate.toDate) {
-          lessonDate = lessonData.scheduledDate.toDate();
-        } else {
-          lessonDate = new Date(lessonData.scheduledDate);
-        }
-        
-        const [hours, minutes] = lessonData.startTime.split(':').map(Number);
-        lessonDate.setHours(hours, minutes, 0, 0);
-        
-        if (lessonDate < now) {
-          return {
-            success: false,
-            message: 'Geçmiş bir derse öğrenci eklenemez. Bu ders zaten gerçekleşti.'
-          };
-        }
-      }
-      
+
+      // Admin can add students to past lessons for record-keeping purposes
+
       const currentParticipants = lessonData.participants ? lessonData.participants.length : 0;
       
       // Check if lesson is full
@@ -1661,30 +1640,9 @@ const adminLessonService = {
       }
       
       const lessonData = lessonDoc.data();
-      
-      // Check if lesson is in the past
-      const now = new Date();
-      if (lessonData.scheduledDate && lessonData.startTime) {
-        let lessonDate;
-        if (typeof lessonData.scheduledDate === 'string') {
-          lessonDate = new Date(lessonData.scheduledDate);
-        } else if (lessonData.scheduledDate.toDate) {
-          lessonDate = lessonData.scheduledDate.toDate();
-        } else {
-          lessonDate = new Date(lessonData.scheduledDate);
-        }
-        
-        const [hours, minutes] = lessonData.startTime.split(':').map(Number);
-        lessonDate.setHours(hours, minutes, 0, 0);
-        
-        if (lessonDate < now) {
-          return {
-            success: false,
-            message: 'Geçmiş bir dersten öğrenci çıkarılamaz. Bu ders zaten gerçekleşti.'
-          };
-        }
-      }
-      
+
+      // Admin can remove students from past lessons for record-keeping purposes
+
       // Check if user is registered
       if (!lessonData.participants || !lessonData.participants.includes(userId)) {
         return {

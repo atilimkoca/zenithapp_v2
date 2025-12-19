@@ -185,12 +185,12 @@ export default function AdminAddStudentToLessonScreen({ navigation, route }) {
       />
 
       <View style={styles.content}>
-        {/* Past Lesson Warning */}
+        {/* Past Lesson Info Banner */}
         {isPastLesson && (
-          <View style={styles.warningBanner}>
-            <Ionicons name="warning" size={20} color={colors.warning} />
-            <Text style={styles.warningText}>
-              Bu ders geçmişte kaldı. Öğrenci eklenemez veya çıkarılamaz.
+          <View style={styles.infoBanner}>
+            <Ionicons name="information-circle" size={20} color={colors.primary} />
+            <Text style={styles.infoText}>
+              Bu ders geçmişte kaldı. Kayıt düzenleme yapabilirsiniz.
             </Text>
           </View>
         )}
@@ -273,26 +273,24 @@ export default function AdminAddStudentToLessonScreen({ navigation, route }) {
 
                   {enrolled ? (
                     <TouchableOpacity
-                      style={[styles.removeButton, isPastLesson && styles.removeButtonDisabled]}
+                      style={styles.removeButton}
                       onPress={() => handleRemoveStudent(student)}
-                      disabled={isProcessing || isPastLesson}
+                      disabled={isProcessing}
                     >
                       {isProcessing ? (
                         <ActivityIndicator size="small" color={colors.error} />
                       ) : (
                         <>
-                          <Ionicons name="remove-circle" size={20} color={isPastLesson ? colors.textSecondary : colors.error} />
-                          <Text style={[styles.removeButtonText, isPastLesson && styles.removeButtonTextDisabled]}>
-                            {isPastLesson ? 'Geçmiş' : 'Çıkar'}
-                          </Text>
+                          <Ionicons name="remove-circle" size={20} color={colors.error} />
+                          <Text style={styles.removeButtonText}>Çıkar</Text>
                         </>
                       )}
                     </TouchableOpacity>
                   ) : (
                     <TouchableOpacity
-                      style={[styles.addButton, (isFull || isPastLesson || isFrozen) && styles.addButtonDisabled]}
+                      style={[styles.addButton, (isFull || isFrozen) && styles.addButtonDisabled]}
                       onPress={() => handleAddStudent(student)}
-                      disabled={isProcessing || isFull || isPastLesson || isFrozen}
+                      disabled={isProcessing || isFull || isFrozen}
                     >
                       {isProcessing ? (
                         <ActivityIndicator size="small" color={colors.white} />
@@ -300,7 +298,7 @@ export default function AdminAddStudentToLessonScreen({ navigation, route }) {
                         <>
                           <Ionicons name="add-circle" size={20} color={colors.white} />
                           <Text style={styles.addButtonText}>
-                            {isFrozen ? 'Dondurulmuş' : isPastLesson ? 'Geçmiş' : isFull ? 'Dolu' : 'Ekle'}
+                            {isFrozen ? 'Dondurulmuş' : isFull ? 'Dolu' : 'Ekle'}
                           </Text>
                         </>
                       )}
@@ -352,6 +350,24 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 14,
     color: '#856404',
+    fontWeight: '500',
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primary + '15',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  infoText: {
+    flex: 1,
+    marginLeft: 8,
+    fontSize: 14,
+    color: colors.primary,
     fontWeight: '500',
   },
   lessonInfo: {

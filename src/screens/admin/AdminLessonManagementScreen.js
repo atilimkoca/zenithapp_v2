@@ -188,10 +188,11 @@ export default function AdminLessonManagementScreen({ navigation }) {
       );
     }
 
+    // Sort by startTime (time of day) within the same date
     filtered.sort((a, b) => {
-      const dateA = new Date(a.scheduledDate);
-      const dateB = new Date(b.scheduledDate);
-      return dateA - dateB;
+      const timeA = (a.startTime || '').replace(':', '');
+      const timeB = (b.startTime || '').replace(':', '');
+      return (parseInt(timeA) || 0) - (parseInt(timeB) || 0);
     });
 
     setFilteredLessons(filtered);
@@ -389,17 +390,27 @@ export default function AdminLessonManagementScreen({ navigation }) {
     panY.setValue(0);
   };
 
+  // Helper to get the actual lesson start datetime by combining scheduledDate and startTime
+  const getLessonDateTime = (lesson) => {
+    const lessonDate = new Date(lesson.scheduledDate);
+    if (lesson.startTime) {
+      const [hours, minutes] = lesson.startTime.split(':').map(Number);
+      lessonDate.setHours(hours || 0, minutes || 0, 0, 0);
+    }
+    return lessonDate;
+  };
+
   const getStatusColor = (lesson) => {
     if (lesson.status === 'cancelled') return colors.error;
     if (lesson.status === 'completed') return colors.success;
-    if (new Date(lesson.scheduledDate) < new Date()) return colors.warning;
+    if (getLessonDateTime(lesson) < new Date()) return colors.warning;
     return colors.primary;
   };
 
   const getStatusText = (lesson) => {
     if (lesson.status === 'cancelled') return 'İptal Edildi';
     if (lesson.status === 'completed') return 'Tamamlandı';
-    if (new Date(lesson.scheduledDate) < new Date()) return 'Geçmiş';
+    if (getLessonDateTime(lesson) < new Date()) return 'Geçmiş';
     return 'Yaklaşan';
   };
 
@@ -531,16 +542,13 @@ export default function AdminLessonManagementScreen({ navigation }) {
               </View>
             </View>
 
-            {/* Action Buttons */}
+            {/* Action Buttons - Admin can edit/cancel past lessons too */}
             {(() => {
-              const lessonDate = new Date(lesson.scheduledDate);
-              const now = new Date();
-              const isPast = lessonDate < now;
-              
-              if (isPast || lesson.status === 'cancelled' || lesson.status === 'completed') {
+              // Only hide buttons for cancelled lessons
+              if (lesson.status === 'cancelled') {
                 return null;
               }
-              
+
               return (
                 <View style={styles.lessonActions}>
                   <TouchableOpacity
@@ -1073,73 +1081,39 @@ export default function AdminLessonManagementScreen({ navigation }) {
                       <View style={styles.modalBottomPadding} />
                     </ScrollView>
 
-                    {/* Bottom Action Buttons */}
+                    {/* Bottom Action Buttons - Admin can manage past lessons too */}
                     {(() => {
-                      // Check if lesson is in the past (including time)
-                      const now = new Date();
-                      let lessonDateTime = new Date(selectedLesson.scheduledDate);
-                      
-                      // Add the start time to the date
-                      if (selectedLesson.startTime) {
-                        const [hours, minutes] = selectedLesson.startTime.split(':').map(Number);
-                        lessonDateTime.setHours(hours, minutes, 0, 0);
-                      }
-                      
-                      const isPast = lessonDateTime < now;
-                      
-                      // Debug logging
-                      console.log('🔍 Button Visibility Check:', {
-                        lessonTitle: selectedLesson.title,
-                        scheduledDate: selectedLesson.scheduledDate,
-                        startTime: selectedLesson.startTime,
-                        lessonDateTime: lessonDateTime.toISOString(),
-                        now: now.toISOString(),
-                        isPast,
-                        status: selectedLesson.status,
-                        willShowButtons: !isPast && selectedLesson.status !== 'cancelled' && selectedLesson.status !== 'completed'
-                      });
-                      
-                      // Only show buttons for future lessons that are not cancelled/completed
-                      if (!isPast && selectedLesson.status !== 'cancelled' && selectedLesson.status !== 'completed') {
+                      // Only hide buttons for cancelled lessons
+                      if (selectedLesson.status === 'cancelled') {
                         return (
-                          <View style={styles.modalFooter}>
-                            <ScrollView 
-                              horizontal 
-                              showsHorizontalScrollIndicator={false}
-                              contentContainerStyle={styles.footerButtonContainer}
-                            >
-                              <TouchableOpacity
-                                style={styles.footerButton}
-                                onPress={() => {
-                                  closeLessonDetails();
-                                  navigation.navigate('AddStudentToLesson', { lesson: selectedLesson });
-                                }}
-                              >
-                                <View style={styles.footerButtonIcon}>
-                                  <Ionicons name="person-add-outline" size={20} color={colors.white} />
-                                </View>
-                                <Text style={styles.footerButtonText}>Öğrenci Ekle</Text>
-                              </TouchableOpacity>
-                            </ScrollView>
+                          <View style={styles.modalFooterInfo}>
+                            <Ionicons name="close-circle" size={20} color={colors.error} />
+                            <Text style={styles.modalFooterInfoText}>Bu ders iptal edildi</Text>
                           </View>
                         );
                       }
-                      
-                      // For past or cancelled lessons, show a simple info message
+
+                      // Show action buttons for all lessons (including past)
                       return (
-                        <View style={styles.modalFooterInfo}>
-                          <Ionicons 
-                            name={selectedLesson.status === 'cancelled' ? 'close-circle' : 'checkmark-circle'} 
-                            size={20} 
-                            color={selectedLesson.status === 'cancelled' ? colors.error : colors.textSecondary} 
-                          />
-                          <Text style={styles.modalFooterInfoText}>
-                            {selectedLesson.status === 'cancelled' 
-                              ? 'Bu ders iptal edildi' 
-                              : isPast 
-                                ? 'Bu ders tamamlandı' 
-                                : 'Detayları görüntülüyorsunuz'}
-                          </Text>
+                        <View style={styles.modalFooter}>
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={styles.footerButtonContainer}
+                          >
+                            <TouchableOpacity
+                              style={styles.footerButton}
+                              onPress={() => {
+                                closeLessonDetails();
+                                navigation.navigate('AddStudentToLesson', { lesson: selectedLesson });
+                              }}
+                            >
+                              <View style={styles.footerButtonIcon}>
+                                <Ionicons name="person-add-outline" size={20} color={colors.white} />
+                              </View>
+                              <Text style={styles.footerButtonText}>Öğrenci Ekle</Text>
+                            </TouchableOpacity>
+                          </ScrollView>
                         </View>
                       );
                     })()}

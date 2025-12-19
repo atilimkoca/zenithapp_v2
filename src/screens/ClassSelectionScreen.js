@@ -115,7 +115,13 @@ const LessonCard = React.memo(({ lesson, userId, onBook, onCancel, t }) => {
   const isUserBooked = lesson.participants && lesson.participants.includes(userId);
 
   const now = Date.now();
-  const lessonDateTime = new Date(lesson.scheduledDate).getTime();
+  // Combine scheduledDate with startTime to get actual lesson start time
+  const lessonDate = new Date(lesson.scheduledDate);
+  if (lesson.startTime) {
+    const [hours, minutes] = lesson.startTime.split(':').map(Number);
+    lessonDate.setHours(hours || 0, minutes || 0, 0, 0);
+  }
+  const lessonDateTime = lessonDate.getTime();
   const timeUntilLesson = lessonDateTime - now;
   const twoHoursInMs = 2 * 60 * 60 * 1000;
   const eightHoursInMs = 8 * 60 * 60 * 1000;
@@ -471,6 +477,10 @@ export default function ClassSelectionScreen() {
     // Check if lesson is too close to start (within 2 hours)
     const now = new Date();
     const lessonDateTime = new Date(lesson.scheduledDate);
+    if (lesson.startTime) {
+      const [hours, minutes] = lesson.startTime.split(':').map(Number);
+      lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);
+    }
     const timeUntilLesson = lessonDateTime.getTime() - now.getTime();
     const twoHoursInMs = 2 * 60 * 60 * 1000;
     

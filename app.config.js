@@ -6,10 +6,10 @@ export default ({ config }) => ({
   slug: config.slug || 'zenith-studio',
   version: '1.0.1',
   orientation: 'portrait',
-  icon: './assets/app_icon.jpeg',
+  icon: './assets/app_icon_christmas.png',
   userInterfaceStyle: 'light',
   splash: {
-    image: './assets/zenith_logo_rounded.png',
+    image: './assets/app_icon_christmas.png',
     resizeMode: 'contain',
     backgroundColor: '#ffffff'
   },
@@ -81,7 +81,7 @@ export default ({ config }) => ({
     versionCode: 1,
     jsEngine: 'jsc',
     adaptiveIcon: {
-      foregroundImage: './assets/app_icon.jpeg',
+      foregroundImage: './assets/app_icon_christmas.png',
       backgroundColor: '#ffffff'
     },
     permissions: [
