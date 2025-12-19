@@ -389,6 +389,17 @@ export default function ClassSelectionScreen() {
 
     let filtered = [...currentDayLessons];
 
+    // Filter out past lessons - users should only see upcoming lessons
+    const now = new Date();
+    filtered = filtered.filter(lesson => {
+      const lessonDate = new Date(lesson.scheduledDate);
+      if (lesson.startTime) {
+        const [hours, minutes] = lesson.startTime.split(':').map(Number);
+        lessonDate.setHours(hours || 0, minutes || 0, 0, 0);
+      }
+      return lessonDate >= now;
+    });
+
     // Filter by user's package type - ALWAYS apply this filter
     const rawPackageType = userData?.packageInfo?.packageType;
     const normalizedUserPackageType = normalizePackageType(rawPackageType);
