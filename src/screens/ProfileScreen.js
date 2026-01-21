@@ -124,6 +124,23 @@ export default function ProfileScreen({ navigation }) {
     }, 100);
   };
 
+  // Local date formatter for package dates
+  const formatPackageDate = (value) => {
+    if (!value) return '—';
+    try {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '—';
+      const resolvedLocale = language === 'tr' ? 'tr-TR' : language === 'en' ? 'en-US' : language || 'tr-TR';
+      return date.toLocaleDateString(resolvedLocale, {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+    } catch (error) {
+      return '—';
+    }
+  };
+
   const [profileData, setProfileData] = useState({
     firstName: '',
     lastName: '',
@@ -733,6 +750,19 @@ export default function ProfileScreen({ navigation }) {
               </View>
               <Text style={styles.modernStatValue}>{userStats.monthlyLessons}</Text>
               <Text style={styles.modernStatLabel}>{t('profile.thisMonth')}</Text>
+            </View>
+          </View>
+
+          {/* Package End Date */}
+          <View style={styles.statsGrid}>
+            <View style={styles.modernStatCard}>
+              <View style={[styles.statIconBox, { backgroundColor: colors.info + '15' }]}> 
+                <Ionicons name="time-outline" size={22} color={colors.info} />
+              </View>
+              <Text style={styles.modernStatValue}>
+                {formatPackageDate(userData?.packageExpiryDate || userData?.packageInfo?.expiryDate)}
+              </Text>
+              <Text style={styles.modernStatLabel}>{t('profile.packageEndDate')}</Text>
             </View>
           </View>
 

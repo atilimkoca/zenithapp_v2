@@ -4,12 +4,12 @@ export default ({ config }) => ({
   ...config,
   name: 'Zenith Studio',
   slug: config.slug || 'zenith-studio',
-  version: '1.0.2',
+  version: '1.0.3',
   orientation: 'portrait',
-  icon: './assets/app_icon_christmas.png',
+  icon: './assets/app_icon.jpeg',
   userInterfaceStyle: 'light',
   splash: {
-    image: './assets/app_icon_christmas.png',
+    image: './assets/app_icon.jpeg',
     resizeMode: 'contain',
     backgroundColor: '#ffffff'
   },
@@ -19,7 +19,7 @@ export default ({ config }) => ({
   ios: {
     ...config.ios,
     bundleIdentifier: 'com.zenithstudio.app',
-    buildNumber: '3',
+    buildNumber: '4',
     supportsTablet: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -78,10 +78,10 @@ export default ({ config }) => ({
   android: {
     ...config.android,
     package: 'com.zenithstudio.app',
-    versionCode: 1,
-    jsEngine: 'jsc',
+    versionCode: 3,
+    jsEngine: 'hermes',
     adaptiveIcon: {
-      foregroundImage: './assets/app_icon_christmas.png',
+      foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#ffffff'
     },
     permissions: [
@@ -95,7 +95,9 @@ export default ({ config }) => ({
     googleServicesFile: process.env.GOOGLE_SERVICES_JSON || './google-services.json'
   },
   plugins: [
-    "expo-localization"
+    "expo-localization",
+    "@react-native-community/datetimepicker",
+    "react-native-localize"
   ],
   extra: {
     ...config.extra,

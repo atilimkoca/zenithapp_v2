@@ -33,6 +33,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
   const [currentDateLessons, setCurrentDateLessons] = useState([]);
   const [filteredLessons, setFilteredLessons] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showOnlyMyLessons, setShowOnlyMyLessons] = useState(true); // Default to show only user's lessons
   const [selectedDateKey, setSelectedDateKey] = useState(null);
   const selectedDateRef = useRef(null);
   const [selectedLesson, setSelectedLesson] = useState(null);
@@ -179,6 +180,15 @@ export default function AdminLessonManagementScreen({ navigation }) {
   useEffect(() => {
     let filtered = [...currentDateLessons];
 
+    // Filter by trainer if showOnlyMyLessons is enabled
+    if (showOnlyMyLessons && user?.uid) {
+      filtered = filtered.filter(lesson => 
+        lesson.trainerId === user.uid ||
+        lesson.instructor === user.uid ||
+        lesson.teacherId === user.uid
+      );
+    }
+
     if (searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase();
       filtered = filtered.filter(lesson =>
@@ -196,7 +206,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
     });
 
     setFilteredLessons(filtered);
-  }, [currentDateLessons, searchTerm]);
+  }, [currentDateLessons, searchTerm, showOnlyMyLessons, user?.uid]);
 
   // Reload lessons when screen comes back into focus (after editing/creating)
   useEffect(() => {
@@ -221,26 +231,27 @@ export default function AdminLessonManagementScreen({ navigation }) {
 
   const handleCancelLesson = async (lessonId, lessonTitle) => {
     Alert.alert(
-      'Dersi İptal Et',
-      `"${lessonTitle}" dersini iptal etmek istediğinizden emin misiniz?`,
+      'Dersi Sil',
+      `"${lessonTitle}" dersini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.`,
       [
         { text: 'Hayır', style: 'cancel' },
         {
-          text: 'Evet, İptal Et',
+          text: 'Evet, Sil',
           style: 'destructive',
           onPress: async () => {
             try {
-              const result = await lessonService.cancelLesson(lessonId, user.uid);
+              const result = await lessonService.deleteLesson(lessonId);
               
               if (result.success) {
-                await refreshData(true);
-                Alert.alert('Başarılı', 'Ders başarıyla iptal edildi');
+                // Remove lesson from local state immediately (fast UI update)
+                setCurrentDateLessons(prev => prev.filter(lesson => lesson.id !== lessonId));
+                Alert.alert('Başarılı', 'Ders başarıyla silindi');
               } else {
-                Alert.alert('Hata', result.message || 'Ders iptal edilemedi');
+                Alert.alert('Hata', result.message || 'Ders silinemedi');
               }
             } catch (error) {
-              console.error('Error cancelling lesson:', error);
-              Alert.alert('Hata', 'Ders iptal edilirken hata oluştu');
+              console.error('Error deleting lesson:', error);
+              Alert.alert('Hata', 'Ders silinirken hata oluştu');
             }
           }
         }
@@ -570,8 +581,8 @@ export default function AdminLessonManagementScreen({ navigation }) {
                     }}
                     activeOpacity={0.8}
                   >
-                    <Ionicons name="close-circle-outline" size={16} color={colors.white} />
-                    <Text style={styles.actionButtonText}>İptal Et</Text>
+                    <Ionicons name="trash-outline" size={16} color={colors.white} />
+                    <Text style={styles.actionButtonText}>Sil</Text>
                   </TouchableOpacity>
                 </View>
               );
@@ -632,6 +643,51 @@ export default function AdminLessonManagementScreen({ navigation }) {
         </View>
 
         <View style={styles.quickActionsRow}>
+          {/* Filter Buttons - My Lessons / All Lessons */}
+          <View style={styles.filterButtonsContainer}>
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                showOnlyMyLessons && styles.filterButtonActive
+              ]}
+              onPress={() => setShowOnlyMyLessons(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons 
+                name="person" 
+                size={16} 
+                color={showOnlyMyLessons ? colors.white : colors.primary} 
+              />
+              <Text style={[
+                styles.filterButtonText,
+                showOnlyMyLessons && styles.filterButtonTextActive
+              ]}>
+                Derslerim
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.filterButton,
+                !showOnlyMyLessons && styles.filterButtonActive
+              ]}
+              onPress={() => setShowOnlyMyLessons(false)}
+              activeOpacity={0.8}
+            >
+              <Ionicons 
+                name="people" 
+                size={16} 
+                color={!showOnlyMyLessons ? colors.white : colors.primary} 
+              />
+              <Text style={[
+                styles.filterButtonText,
+                !showOnlyMyLessons && styles.filterButtonTextActive
+              ]}>
+                Tüm Dersler
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <TouchableOpacity
             style={styles.bulkDeleteButton}
             onPress={() => {
@@ -1190,6 +1246,33 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingHorizontal: 16,
     marginBottom: 8,
+    gap: 10,
+  },
+  filterButtonsContainer: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  filterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: colors.white,
+  },
+  filterButtonActive: {
+    backgroundColor: colors.primary,
+  },
+  filterButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginLeft: 6,
+    color: colors.primary,
+  },
+  filterButtonTextActive: {
+    color: colors.white,
   },
   bulkDeleteButton: {
     flexDirection: 'row',

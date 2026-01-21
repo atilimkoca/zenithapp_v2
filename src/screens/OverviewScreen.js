@@ -160,7 +160,14 @@ export default function OverviewScreen({ navigation }) {
         let lessonDate;
         
         if (typeof lesson.scheduledDate === 'string') {
-          lessonDate = new Date(lesson.scheduledDate.split('T')[0]);
+          // Handle date-only strings by parsing as local time to avoid UTC issues
+          const dateStr = lesson.scheduledDate.split('T')[0];
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            const [year, month, day] = dateStr.split('-').map(Number);
+            lessonDate = new Date(year, month - 1, day);
+          } else {
+            lessonDate = new Date(lesson.scheduledDate);
+          }
         } else if (lesson.scheduledDate.seconds) {
           lessonDate = new Date(lesson.scheduledDate.seconds * 1000);
         } else {

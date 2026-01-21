@@ -115,7 +115,15 @@ const LessonCard = React.memo(({ lesson, userId, onBook, onCancel, t }) => {
 
   const now = Date.now();
   // Combine scheduledDate with startTime to get actual lesson start time
-  const lessonDate = new Date(lesson.scheduledDate);
+  // Handle date-only strings by parsing as local time to avoid timezone issues
+  let lessonDate;
+  const dateVal = lesson.scheduledDate;
+  if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+    const [year, month, day] = dateVal.split('-').map(Number);
+    lessonDate = new Date(year, month - 1, day);
+  } else {
+    lessonDate = new Date(dateVal);
+  }
   if (lesson.startTime) {
     const [hours, minutes] = lesson.startTime.split(':').map(Number);
     lessonDate.setHours(hours || 0, minutes || 0, 0, 0);
@@ -422,7 +430,21 @@ export default function ClassSelectionScreen() {
     // Filter out past lessons - users should only see upcoming lessons
     const now = new Date();
     filtered = filtered.filter(lesson => {
-      const lessonDate = new Date(lesson.scheduledDate);
+      // Parse scheduledDate safely to handle timezone issues
+      let lessonDate;
+      const dateVal = lesson.scheduledDate;
+      if (typeof dateVal === 'string') {
+        // Handle date-only strings (e.g., "2026-01-07") by parsing as local time
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+          const [year, month, day] = dateVal.split('-').map(Number);
+          lessonDate = new Date(year, month - 1, day);
+        } else {
+          lessonDate = new Date(dateVal);
+        }
+      } else {
+        lessonDate = new Date(dateVal);
+      }
+      
       if (lesson.startTime) {
         const [hours, minutes] = lesson.startTime.split(':').map(Number);
         lessonDate.setHours(hours || 0, minutes || 0, 0, 0);
@@ -517,7 +539,15 @@ export default function ClassSelectionScreen() {
 
     // Check if lesson is too close to start (within 2 hours)
     const now = new Date();
-    const lessonDateTime = new Date(lesson.scheduledDate);
+    // Parse scheduledDate safely to handle timezone issues
+    let lessonDateTime;
+    const dateVal = lesson.scheduledDate;
+    if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+      const [year, month, day] = dateVal.split('-').map(Number);
+      lessonDateTime = new Date(year, month - 1, day);
+    } else {
+      lessonDateTime = new Date(dateVal);
+    }
     if (lesson.startTime) {
       const [hours, minutes] = lesson.startTime.split(':').map(Number);
       lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);
@@ -566,7 +596,15 @@ export default function ClassSelectionScreen() {
       return;
     }
 
-    let lessonDateTime = new Date(lesson.scheduledDate);
+    // Parse scheduledDate safely to handle timezone issues
+    let lessonDateTime;
+    const dateVal = lesson.scheduledDate;
+    if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+      const [year, month, day] = dateVal.split('-').map(Number);
+      lessonDateTime = new Date(year, month - 1, day);
+    } else {
+      lessonDateTime = new Date(dateVal);
+    }
     if (lesson.startTime) {
       const [hours, minutes] = lesson.startTime.split(':').map(Number);
       lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);

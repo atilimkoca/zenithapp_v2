@@ -15,6 +15,7 @@ import { colors } from '../../constants/colors';
 import UniqueHeader from '../../components/UniqueHeader';
 import { adminService } from '../../services/adminService';
 import { useI18n } from '../../context/I18nContext';
+import { userLessonService } from '../../services/userLessonService';
 
 const buildUserName = (user) => {
   if (user?.displayName) return user.displayName;
@@ -64,6 +65,9 @@ export default function AdminUserDetailScreen({ route, navigation }) {
   const [user, setUser] = useState(initialUser || null);
   const [loading, setLoading] = useState(!initialUser);
   const [error, setError] = useState(null);
+  const [pastLessons, setPastLessons] = useState([]);
+  const [lessonsLoading, setLessonsLoading] = useState(false);
+  const [lessonsError, setLessonsError] = useState(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -89,6 +93,32 @@ export default function AdminUserDetailScreen({ route, navigation }) {
       fetchUser();
     }
   }, [userId, initialUser]);
+
+  useEffect(() => {
+    const loadPastLessons = async () => {
+      if (!userId) return;
+      try {
+        setLessonsLoading(true);
+        setLessonsError(null);
+        const result = await userLessonService.getUserLessons(userId, { forceRefresh: true });
+        if (result.success) {
+          const completed = result.lessons?.completed || [];
+          // Show latest 10
+          setPastLessons(completed.slice(0, 10));
+        } else {
+          setLessonsError(result.message || 'Dersler yüklenemedi.');
+          setPastLessons([]);
+        }
+      } catch (e) {
+        setLessonsError('Dersler yüklenemedi.');
+        setPastLessons([]);
+      } finally {
+        setLessonsLoading(false);
+      }
+    };
+
+    loadPastLessons();
+  }, [userId]);
 
   const statusDescriptor = useMemo(() => {
     const status = user?.status;
@@ -244,6 +274,14 @@ export default function AdminUserDetailScreen({ route, navigation }) {
             label="Üyelikler"
             value={user?.packageInfo?.packageName || 'Üyelik bulunamadı'}
             onPress={handleMembershipPress}
+            rightIcon="chevron-forward"
+          />
+
+          <InfoRow
+            icon="time-outline"
+            label="Geçmiş Dersler"
+            value="Tüm geçmiş dersleri görüntüle"
+            onPress={() => navigation.navigate('AdminUserPastLessons', { userId, userName: buildUserName(user) })}
             rightIcon="chevron-forward"
           />
 
@@ -417,5 +455,70 @@ const styles = StyleSheet.create({
   },
   infoChevron: {
     marginLeft: 12,
+  },
+  lessonListCard: {
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 24, 16, 0.08)',
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  lessonsLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  lessonsLoaderText: {
+    marginLeft: 8,
+    color: colors.textSecondary,
+  },
+  emptyLessonsText: {
+    paddingVertical: 12,
+    textAlign: 'center',
+    color: colors.textSecondary,
+  },
+  lessonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(15, 24, 16, 0.06)',
+  },
+  lessonIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  lessonInfo: {
+    flex: 1,
+  },
+  lessonTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  lessonMeta: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  lessonRight: {
+    marginLeft: 8,
+    maxWidth: 120,
+  },
+  lessonInstructor: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'right',
   },
 });

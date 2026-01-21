@@ -1,6 +1,31 @@
 import { collection, query, where, getDocs, orderBy, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
+// Helper function to normalize date to midnight local time for date-only comparisons
+const normalizeDateToMidnight = (value) => {
+  if (!value) return null;
+  let date = null;
+  
+  if (value instanceof Date) {
+    date = value;
+  } else if (typeof value?.toDate === 'function') {
+    date = value.toDate();
+  } else if (typeof value?.seconds === 'number') {
+    date = new Date(value.seconds * 1000);
+  } else if (typeof value === 'string') {
+    // Handle date-only strings as local time to prevent timezone issues
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [year, month, day] = value.split('-').map(Number);
+      date = new Date(year, month - 1, day);
+    } else {
+      date = new Date(value);
+    }
+  }
+  
+  if (!date || Number.isNaN(date.getTime())) return null;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+
 export const trainerService = {
   // Get all active trainers
   getAllTrainers: async () => {
@@ -181,14 +206,15 @@ export const trainerService = {
       const lessonsSnapshot = await getDocs(lessonsQuery);
       const lessons = [];
       const today = new Date();
+      today.setHours(0, 0, 0, 0); // Normalize to midnight for comparison
       
       lessonsSnapshot.forEach((doc) => {
         const lessonData = doc.data();
         
-        // Only include future lessons
+        // Only include future lessons (today and onwards)
         if (lessonData.scheduledDate) {
-          const lessonDate = new Date(lessonData.scheduledDate);
-          if (lessonDate >= today) {
+          const lessonDate = normalizeDateToMidnight(lessonData.scheduledDate);
+          if (lessonDate && lessonDate >= today) {
             lessons.push({
               id: doc.id,
               ...lessonData
@@ -197,11 +223,20 @@ export const trainerService = {
         }
       });
       
-      // Sort by date and time
+      // Sort by date and time using normalizeDateToMidnight for proper timezone handling
       lessons.sort((a, b) => {
-        const dateTimeA = new Date(`${a.scheduledDate}T${a.startTime}`);
-        const dateTimeB = new Date(`${b.scheduledDate}T${b.startTime}`);
-        return dateTimeA - dateTimeB;
+        const dateA = normalizeDateToMidnight(a.scheduledDate);
+        const dateB = normalizeDateToMidnight(b.scheduledDate);
+        if (!dateA || !dateB) return 0;
+        if (a.startTime) {
+          const [h, m] = a.startTime.split(':').map(Number);
+          dateA.setHours(h || 0, m || 0, 0, 0);
+        }
+        if (b.startTime) {
+          const [h, m] = b.startTime.split(':').map(Number);
+          dateB.setHours(h || 0, m || 0, 0, 0);
+        }
+        return dateA - dateB;
       });
       
       return {

@@ -146,6 +146,7 @@ export default {
     remainingLessons: 'Kalan Dersler',
     totalLessons: 'Toplam Dersler',
     thisMonth: 'Bu Ay',
+    packageEndDate: 'Paket Bitiş Tarihi',
     thisWeek: 'Bu Hafta',
     completionRate: 'Tamamlama Oranı',
     profileUpdated: 'Profil bilgileri güncellendi.',

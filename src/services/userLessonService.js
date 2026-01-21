@@ -7,6 +7,33 @@ const CACHE_TTL = 60 * 1000; // 1 minute cache for user lessons
 let userLessonsCache = {};
 let userLessonsCacheTimestamp = {};
 
+// Helper function to safely parse date values (handles timezone issues)
+const parseDateValue = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+  if (typeof value?.toDate === 'function') {
+    const date = value.toDate();
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value?.seconds === 'number') {
+    const date = new Date(value.seconds * 1000);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  if (typeof value === 'string') {
+    // Handle date-only strings (e.g., "2026-01-07") by parsing as local time
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [year, month, day] = value.split('-').map(Number);
+      const date = new Date(year, month - 1, day);
+      return Number.isNaN(date.getTime()) ? null : date;
+    }
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  return null;
+};
+
 // Clear cache for a specific user (call after booking/cancellation)
 export const clearUserLessonsCache = (userId) => {
   if (userId) {
@@ -122,52 +149,34 @@ export const userLessonService = {
         // Determine lesson status based on date and time
         if (lessonData.scheduledDate) {
           try {
-            // Create lesson date and time more carefully
-            let lessonDateTime;
-            
-            // Handle different date formats
-            if (lessonData.scheduledDate.includes('T')) {
-              // ISO format: 2025-09-08T00:00:00.000Z
-              const dateOnly = lessonData.scheduledDate.split('T')[0];
-              lessonDateTime = new Date(`${dateOnly}T${lessonData.endTime || lessonData.startTime}:00`);
-            } else {
-              // Simple format: 2025-09-08
-              lessonDateTime = new Date(`${lessonData.scheduledDate}T${lessonData.endTime || lessonData.startTime}:00`);
-            }
+            // Create lesson date and time using parseDateValue for proper timezone handling
+            const lessonDate = parseDateValue(lessonData.scheduledDate);
+            if (lessonDate) {
+              // Set the time on the properly parsed date
+              if (lessonData.endTime || lessonData.startTime) {
+                const timeStr = lessonData.endTime || lessonData.startTime;
+                const [hours, minutes] = timeStr.split(':').map(Number);
+                lessonDate.setHours(hours || 0, minutes || 0, 0, 0);
+              }
               
               const now = new Date();
-              
               
               if (lessonData.status === 'cancelled') {
                 lesson.userStatus = 'cancelled';
                 lesson.reason = 'Ders iptal edildi';
-              } else if (lessonDateTime < now) {
+              } else if (lessonDate < now) {
                 lesson.userStatus = 'completed';
               } else {
                 lesson.userStatus = 'upcoming';
               }
-            } catch (dateError) {
-              console.warn('Date parsing error for lesson:', lesson.id, dateError);
-              // Try a simpler date comparison
-              try {
-                const lessonDateOnly = new Date(lessonData.scheduledDate.split('T')[0]);
-                const todayOnly = new Date();
-                todayOnly.setHours(0, 0, 0, 0);
-                lessonDateOnly.setHours(23, 59, 59, 999); // End of lesson day
-                
-                if (lessonData.status === 'cancelled') {
-                  lesson.userStatus = 'cancelled';
-                } else if (lessonDateOnly < todayOnly) {
-                  lesson.userStatus = 'completed';
-                } else {
-                  lesson.userStatus = 'upcoming';
-                }
-              } catch (fallbackError) {
-                console.error('Fallback date parsing also failed:', fallbackError);
-                lesson.userStatus = 'upcoming';
-              }
+            } else {
+              lesson.userStatus = 'upcoming';
             }
-          } else {
+          } catch (dateError) {
+            console.warn('Date parsing error for lesson:', lesson.id, dateError);
+            lesson.userStatus = 'upcoming';
+          }
+        } else {
             // For legacy lessons without scheduledDate
             lesson.userStatus = 'upcoming';
           }
@@ -181,25 +190,33 @@ export const userLessonService = {
       // Sort lessons by date and time
       userLessons.sort((a, b) => {
         try {
-          const dateTimeA = new Date(`${a.scheduledDate}T${a.startTime || '00:00'}`);
-          const dateTimeB = new Date(`${b.scheduledDate}T${b.startTime || '00:00'}`);
+          const dateA = parseDateValue(a.scheduledDate);
+          const dateB = parseDateValue(b.scheduledDate);
           
-          if (isNaN(dateTimeA.getTime()) || isNaN(dateTimeB.getTime())) {
-            return 0;
+          if (!dateA || !dateB) return 0;
+          
+          // Set times on the dates
+          if (a.startTime) {
+            const [h, m] = a.startTime.split(':').map(Number);
+            dateA.setHours(h || 0, m || 0, 0, 0);
+          }
+          if (b.startTime) {
+            const [h, m] = b.startTime.split(':').map(Number);
+            dateB.setHours(h || 0, m || 0, 0, 0);
           }
           
           // For completed lessons, show newest first
           // For upcoming lessons, show soonest first
           if (a.userStatus === 'completed' && b.userStatus === 'completed') {
-            return dateTimeB - dateTimeA; // Newest first
+            return dateB - dateA; // Newest first
           } else if (a.userStatus === 'upcoming' && b.userStatus === 'upcoming') {
-            return dateTimeA - dateTimeB; // Soonest first
+            return dateA - dateB; // Soonest first
           } else if (a.userStatus === 'upcoming' && b.userStatus === 'completed') {
             return -1; // Upcoming lessons first
           } else if (a.userStatus === 'completed' && b.userStatus === 'upcoming') {
             return 1; // Upcoming lessons first
           } else {
-            return dateTimeA - dateTimeB;
+            return dateA - dateB;
           }
         } catch (error) {
           return 0;
@@ -279,17 +296,17 @@ export const userLessonService = {
         
         // Check if lesson is actually upcoming (not past)
         try {
-          let lessonDateTime;
-          if (lessonData.scheduledDate?.includes('T')) {
-            const dateOnly = lessonData.scheduledDate.split('T')[0];
-            lessonDateTime = new Date(`${dateOnly}T${lessonData.endTime || lessonData.startTime}:00`);
-          } else if (lessonData.scheduledDate) {
-            lessonDateTime = new Date(`${lessonData.scheduledDate}T${lessonData.endTime || lessonData.startTime}:00`);
-          } else {
-            return; // Skip lessons without date
+          const lessonDate = parseDateValue(lessonData.scheduledDate);
+          if (!lessonDate) return; // Skip lessons without valid date
+          
+          // Set the time on the parsed date
+          if (lessonData.endTime || lessonData.startTime) {
+            const timeStr = lessonData.endTime || lessonData.startTime;
+            const [hours, minutes] = timeStr.split(':').map(Number);
+            lessonDate.setHours(hours || 0, minutes || 0, 0, 0);
           }
           
-          if (lessonDateTime <= now) return; // Skip past lessons
+          if (lessonDate <= now) return; // Skip past lessons
         } catch (e) {
           // If date parsing fails, include the lesson
         }
@@ -305,10 +322,19 @@ export const userLessonService = {
         });
       });
       
-      // Sort by date in memory (no index needed)
+      // Sort by date in memory using parseDateValue for proper timezone handling
       upcomingLessons.sort((a, b) => {
-        const dateA = new Date(`${a.scheduledDate}T${a.startTime || '00:00'}`);
-        const dateB = new Date(`${b.scheduledDate}T${b.startTime || '00:00'}`);
+        const dateA = parseDateValue(a.scheduledDate);
+        const dateB = parseDateValue(b.scheduledDate);
+        if (!dateA || !dateB) return 0;
+        if (a.startTime) {
+          const [h, m] = a.startTime.split(':').map(Number);
+          dateA.setHours(h || 0, m || 0, 0, 0);
+        }
+        if (b.startTime) {
+          const [h, m] = b.startTime.split(':').map(Number);
+          dateB.setHours(h || 0, m || 0, 0, 0);
+        }
         return dateA - dateB;
       });
       
@@ -370,7 +396,8 @@ export const userLessonService = {
       // Check if lesson can be cancelled (must be at least 8 hours before start time)
       try {
         // Create lesson datetime by combining scheduledDate with startTime
-        const lessonDateTime = new Date(lessonData.scheduledDate);
+        // Use parseDateValue to handle timezone issues with date-only strings
+        const lessonDateTime = parseDateValue(lessonData.scheduledDate) || new Date();
         if (lessonData.startTime) {
           const [hours, minutes] = lessonData.startTime.split(':').map(Number);
           lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);
@@ -433,8 +460,8 @@ export const userLessonService = {
       try {
         const { lessonService } = await import('./lessonService');
         if (lessonData.scheduledDate) {
-          const lessonDate = new Date(lessonData.scheduledDate);
-          if (!isNaN(lessonDate.getTime())) {
+          const lessonDate = parseDateValue(lessonData.scheduledDate);
+          if (lessonDate) {
             const dateKey = lessonDate.toISOString().split('T')[0];
             lessonService.invalidateDateCache(dateKey);
           }
@@ -473,12 +500,11 @@ export const userLessonService = {
         if (!lesson.scheduledDate || lesson.userStatus === 'cancelled') return false;
         
         try {
-          let lessonDate;
-          if (lesson.scheduledDate.includes('T')) {
-            lessonDate = new Date(lesson.scheduledDate.split('T')[0]);
-          } else {
-            lessonDate = new Date(lesson.scheduledDate);
-          }
+          // Use parseDateValue for safe date parsing
+          const lessonDate = parseDateValue(lesson.scheduledDate);
+          if (!lessonDate) return false;
+          // Normalize to midnight for date-only comparison
+          lessonDate.setHours(0, 0, 0, 0);
           
           const today = new Date();
           
@@ -506,12 +532,9 @@ export const userLessonService = {
         if (!lesson.scheduledDate || lesson.userStatus === 'cancelled') return false;
         
         try {
-          let lessonDate;
-          if (lesson.scheduledDate.includes('T')) {
-            lessonDate = new Date(lesson.scheduledDate.split('T')[0]);
-          } else {
-            lessonDate = new Date(lesson.scheduledDate);
-          }
+          // Use parseDateValue for safe date parsing
+          const lessonDate = parseDateValue(lesson.scheduledDate);
+          if (!lessonDate) return false;
           
           const today = new Date();
           
@@ -608,7 +631,8 @@ export const userLessonService = {
       
       const monthlyLessons = completed.filter(lesson => {
         if (!lesson.scheduledDate) return false;
-        const lessonDate = new Date(lesson.scheduledDate);
+        const lessonDate = parseDateValue(lesson.scheduledDate);
+        if (!lessonDate) return false;
         return lessonDate.getMonth() === thisMonth && lessonDate.getFullYear() === thisYear;
       }).length;
       

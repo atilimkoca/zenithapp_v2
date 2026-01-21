@@ -139,6 +139,7 @@
     remainingLessons: 'Remaining Lessons',
     totalLessons: 'Total Lessons',
     thisMonth: 'This Month',
+    packageEndDate: 'Package End Date',
     thisWeek: 'This Week',
     completionRate: 'Completion',
     updateProfile: 'Update your profile information',

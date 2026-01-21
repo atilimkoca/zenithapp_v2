@@ -220,26 +220,46 @@ const getDefaultLessonTypes = () => {
 const normalizeDateValue = (value) => {
   if (!value) return null;
 
+  let parsed = null;
+
   if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value;
+    parsed = Number.isNaN(value.getTime()) ? null : value;
+  } else if (typeof value?.toDate === 'function') {
+    const temp = value.toDate();
+    parsed = Number.isNaN(temp.getTime()) ? null : temp;
+  } else if (typeof value?.seconds === 'number') {
+    const temp = new Date(value.seconds * 1000);
+    parsed = Number.isNaN(temp.getTime()) ? null : temp;
+  } else if (typeof value === 'string') {
+    // Handle date-only strings (e.g., "2026-01-07") by parsing as local time
+    // This prevents timezone issues where UTC midnight becomes previous day in some timezones
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      const [year, month, day] = value.split('-').map(Number);
+      parsed = new Date(year, month - 1, day); // Local time constructor
+    } else {
+      parsed = new Date(value);
+    }
+    parsed = (parsed && !Number.isNaN(parsed.getTime())) ? parsed : null;
   }
 
-  if (typeof value?.toDate === 'function') {
-    const parsed = value.toDate();
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
+  return parsed;
+};
 
-  if (typeof value?.seconds === 'number') {
-    const parsed = new Date(value.seconds * 1000);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
+// Normalize a date to midnight local time for date-only comparisons
+const normalizeDateToMidnight = (value) => {
+  const date = normalizeDateValue(value);
+  if (!date) return null;
+  const normalized = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return normalized;
+};
 
-  if (typeof value === 'string') {
-    const parsed = new Date(value);
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  return null;
+// Helper to format a date as local YYYY-MM-DD string (avoids UTC conversion issues)
+const formatDateToLocalKey = (date) => {
+  if (!date) return null;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 // Helper to process a single lesson document into the full lesson object
@@ -321,7 +341,7 @@ const fetchAndCacheAllLessons = async (forceRefresh = false) => {
     const data = doc.data();
     if (!data.scheduledDate || !data.startTime || !data.endTime) return;
 
-    const lessonDate = normalizeDateValue(data.scheduledDate);
+    const lessonDate = normalizeDateToMidnight(data.scheduledDate);
     if (!lessonDate || lessonDate < today) return;
 
     const processedLesson = processLessonDoc(data, doc.id, trainersMap, lessonTypes, statusLevels);
@@ -329,8 +349,8 @@ const fetchAndCacheAllLessons = async (forceRefresh = false) => {
 
     allLessons.push(processedLesson);
 
-    // Index by date
-    const dateKey = lessonDate.toISOString().split('T')[0];
+    // Index by date - use local date key to avoid UTC issues
+    const dateKey = formatDateToLocalKey(lessonDate);
     if (!byDate[dateKey]) {
       byDate[dateKey] = [];
     }
@@ -381,10 +401,10 @@ const fetchAvailableDatesOnly = async (forceRefresh = false) => {
       const data = doc.data();
       if (!data.scheduledDate) return;
 
-      const lessonDate = normalizeDateValue(data.scheduledDate);
+      const lessonDate = normalizeDateToMidnight(data.scheduledDate);
       if (!lessonDate || lessonDate < today) return;
 
-      const dateKey = lessonDate.toISOString().split('T')[0];
+      const dateKey = formatDateToLocalKey(lessonDate);
       datesSet.add(dateKey);
     });
 
@@ -432,10 +452,10 @@ const fetchInitialDataOptimized = async () => {
       const data = docSnapshot.data();
       if (!data.scheduledDate || !data.startTime || !data.endTime) return;
 
-      const lessonDate = normalizeDateValue(data.scheduledDate);
+      const lessonDate = normalizeDateToMidnight(data.scheduledDate);
       if (!lessonDate || lessonDate < today) return;
 
-      const dateKey = lessonDate.toISOString().split('T')[0];
+      const dateKey = formatDateToLocalKey(lessonDate);
       datesSet.add(dateKey);
 
       if (!rawLessonsByDate[dateKey]) {
@@ -524,7 +544,11 @@ const fetchLessonsForSingleDate = async (dateString, forceRefresh = false) => {
       const lessonDate = normalizeDateValue(data.scheduledDate);
       if (!lessonDate) return;
 
-      const lessonDateKey = lessonDate.toISOString().split('T')[0];
+      // Use local date components to create date key (avoids UTC conversion issues)
+      const year = lessonDate.getFullYear();
+      const month = String(lessonDate.getMonth() + 1).padStart(2, '0');
+      const day = String(lessonDate.getDate()).padStart(2, '0');
+      const lessonDateKey = `${year}-${month}-${day}`;
       if (lessonDateKey !== dateString) return;
 
       const processedLesson = processLessonDoc(data, doc.id, trainersMap, lessonTypes, statusLevels);
@@ -694,8 +718,8 @@ export const lessonService = {
         
         // Filter for active lessons only and ensure required fields exist
         if (data.status === 'active' && data.scheduledDate && data.startTime && data.endTime) {
-          // Check if lesson is not in the past
-          const lessonDate = normalizeDateValue(data.scheduledDate);
+          // Check if lesson is not in the past - normalize to midnight for comparison
+          const lessonDate = normalizeDateToMidnight(data.scheduledDate);
           const today = new Date();
           today.setHours(0, 0, 0, 0); // Set to start of day for comparison
           
@@ -704,7 +728,7 @@ export const lessonService = {
           }
 
           // Use a normalized ISO string so downstream components get consistent values
-          const scheduledDateISO = lessonDate.toISOString();
+          const scheduledDateISO = normalizeDateValue(data.scheduledDate).toISOString();
 
           // Only include lessons from today onwards
           if (lessonDate >= today) {
@@ -811,10 +835,10 @@ export const lessonService = {
         
         // Filter by level, active status, and not past dates
         if (data.level === level && data.status === 'active' && data.scheduledDate) {
-          const lessonDate = new Date(data.scheduledDate);
+          const lessonDate = normalizeDateToMidnight(data.scheduledDate);
           
           // Only include lessons from today onwards
-          if (lessonDate >= today) {
+          if (lessonDate && lessonDate >= today) {
             lessons.push({
               id: doc.id,
               ...data
@@ -826,14 +850,21 @@ export const lessonService = {
       // Sort by scheduled date and time on client side
       lessons.sort((a, b) => {
         try {
-          const dateTimeA = new Date(`${a.scheduledDate}T${a.startTime}`);
-          const dateTimeB = new Date(`${b.scheduledDate}T${b.startTime}`);
+          const dateA = normalizeDateValue(a.scheduledDate);
+          const dateB = normalizeDateValue(b.scheduledDate);
+          if (!dateA || !dateB) return 0;
           
-          if (isNaN(dateTimeA.getTime()) || isNaN(dateTimeB.getTime())) {
-            return 0;
+          // Set times for proper comparison
+          if (a.startTime) {
+            const [h, m] = a.startTime.split(':').map(Number);
+            dateA.setHours(h || 0, m || 0, 0, 0);
+          }
+          if (b.startTime) {
+            const [h, m] = b.startTime.split(':').map(Number);
+            dateB.setHours(h || 0, m || 0, 0, 0);
           }
           
-          return dateTimeA - dateTimeB;
+          return dateA - dateB;
         } catch (error) {
           return 0;
         }
@@ -871,10 +902,10 @@ export const lessonService = {
             data.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
             data.scheduledDate) {
           
-          const lessonDate = new Date(data.scheduledDate);
+          const lessonDate = normalizeDateToMidnight(data.scheduledDate);
           
           // Only include lessons from today onwards
-          if (lessonDate >= today) {
+          if (lessonDate && lessonDate >= today) {
             lessons.push({
               id: doc.id,
               ...data
@@ -905,6 +936,19 @@ export const lessonService = {
       const userRef = doc(db, 'users', userId);
       const userDoc = await getDoc(userRef);
       
+      // Get lesson data early to check lesson date against membership start date
+      const lessonRef = doc(db, 'lessons', lessonId);
+      const lessonDoc = await getDoc(lessonRef);
+      
+      if (!lessonDoc.exists()) {
+        return {
+          success: false,
+          message: 'Lesson not found.'
+        };
+      }
+      
+      const lessonData = lessonDoc.data();
+      
       if (userDoc.exists()) {
         const userData = userDoc.data();
 
@@ -932,20 +976,27 @@ export const lessonService = {
           };
         }
 
-        // Prevent booking before membership start date (supports future-dated approvals)
+        // Allow booking lessons that are on or after the membership start date
+        // (supports future-dated approvals - user can book future lessons even before membership starts)
         if (userData.packageStartDate || userData.packageInfo?.assignedAt) {
           const startDateValue = userData.packageStartDate || userData.packageInfo?.assignedAt;
-          const startDate = new Date(startDateValue);
-          if (!Number.isNaN(startDate.getTime())) {
-            const normalizedStartDate = new Date(startDate);
-            normalizedStartDate.setHours(0, 0, 0, 0);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            if (normalizedStartDate > today) {
-              return {
-                success: false,
-                messageKey: 'classes.membershipNotStarted'
-              };
+          const membershipStartDate = new Date(startDateValue);
+          if (!Number.isNaN(membershipStartDate.getTime())) {
+            const normalizedMembershipStartDate = new Date(membershipStartDate);
+            normalizedMembershipStartDate.setHours(0, 0, 0, 0);
+            
+            // Get the lesson's scheduled date
+            const lessonScheduledDate = normalizeDateValue(lessonData.scheduledDate);
+            if (lessonScheduledDate) {
+              lessonScheduledDate.setHours(0, 0, 0, 0);
+              
+              // If lesson date is before membership start date, prevent booking
+              if (lessonScheduledDate < normalizedMembershipStartDate) {
+                return {
+                  success: false,
+                  messageKey: 'classes.membershipNotStarted'
+                };
+              }
             }
           }
         }
@@ -965,17 +1016,7 @@ export const lessonService = {
         };
       }
       
-      const lessonRef = doc(db, 'lessons', lessonId);
-      const lessonDoc = await getDoc(lessonRef);
-      
-      if (!lessonDoc.exists()) {
-        return {
-          success: false,
-          message: 'Lesson not found.'
-        };
-      }
-      
-      const lessonData = lessonDoc.data();
+      // lessonRef, lessonDoc, and lessonData already fetched above
       const currentParticipants = lessonData.participants ? lessonData.participants.length : 0;
       
       // Check if lesson is full
@@ -996,14 +1037,14 @@ export const lessonService = {
 
       // Check if lesson is too close to start (must be at least 2 hours before)
       try {
-        const lessonDateTime = new Date(lessonData.scheduledDate);
-        if (lessonData.startTime) {
+        const lessonDateTime = normalizeDateValue(lessonData.scheduledDate);
+        if (lessonDateTime && lessonData.startTime) {
           const [hours, minutes] = lessonData.startTime.split(':').map(Number);
           lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);
         }
 
         const now = new Date();
-        const timeDiff = lessonDateTime.getTime() - now.getTime();
+        const timeDiff = lessonDateTime ? lessonDateTime.getTime() - now.getTime() : Infinity;
         const hoursUntilLesson = timeDiff / (1000 * 60 * 60);
 
         if (hoursUntilLesson < 2) {
@@ -1055,7 +1096,7 @@ export const lessonService = {
         // Invalidate the per-date cache for this lesson's date so UI updates immediately
         const lessonDate = normalizeDateValue(lessonData.scheduledDate);
         if (lessonDate) {
-          const dateKey = lessonDate.toISOString().split('T')[0];
+          const dateKey = formatDateToLocalKey(lessonDate);
           invalidateDateCache(dateKey);
         }
         
@@ -1101,10 +1142,10 @@ export const lessonService = {
         
         // Filter by day of week, active status, and not past dates
         if (data.dayOfWeek === dayOfWeek && data.status === 'active' && data.scheduledDate) {
-          const lessonDate = new Date(data.scheduledDate);
+          const lessonDate = normalizeDateToMidnight(data.scheduledDate);
           
           // Only include lessons from today onwards
-          if (lessonDate >= today) {
+          if (lessonDate && lessonDate >= today) {
             lessons.push({
               id: doc.id,
               ...data
@@ -1191,7 +1232,7 @@ const groupLessonsByDate = (lessons) => {
     const parsedDate = normalizeDateValue(lesson.scheduledDate);
     if (!parsedDate) return;
 
-    const dateKey = parsedDate.toISOString().split('T')[0];
+    const dateKey = formatDateToLocalKey(parsedDate);
     const formattedDate = lesson.formattedDate || formatDate(parsedDate);
 
     if (!grouped[dateKey]) {
@@ -1314,7 +1355,7 @@ const getClassBenefits = (lessonTitle, lessonTypeInfo) => {
 const getAdminDateKey = (value) => {
   const normalized = normalizeDateValue(value);
   if (!normalized) return null;
-  return normalized.toISOString().split('T')[0];
+  return formatDateToLocalKey(normalized);
 };
 
 const fetchAndCacheAdminLessons = async (options = {}) => {
@@ -1694,8 +1735,8 @@ const adminLessonService = {
         };
       }
 
-      const baseDate = new Date(lessonData.scheduledDate);
-      if (Number.isNaN(baseDate.getTime())) {
+      const baseDate = normalizeDateValue(lessonData.scheduledDate);
+      if (!baseDate || Number.isNaN(baseDate.getTime())) {
         return {
           success: false,
           message: 'Geçersiz ders tarihi. Lütfen dersi yeniden kaydedin.',
@@ -1769,8 +1810,11 @@ const adminLessonService = {
           cancelled++;
         } else if (data.status === 'completed') {
           completed++;
-        } else if (new Date(data.scheduledDate) > now) {
-          upcoming++;
+        } else {
+          const lessonDate = normalizeDateValue(data.scheduledDate);
+          if (lessonDate && lessonDate > now) {
+            upcoming++;
+          }
         }
       });
       
@@ -2003,7 +2047,7 @@ const adminLessonService = {
       // Invalidate the per-date cache for this lesson's date so UI updates immediately
       const lessonDate = normalizeDateValue(lessonData.scheduledDate);
       if (lessonDate) {
-        const dateKey = lessonDate.toISOString().split('T')[0];
+        const dateKey = formatDateToLocalKey(lessonDate);
         invalidateDateCache(dateKey);
       }
       

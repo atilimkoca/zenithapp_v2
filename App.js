@@ -15,6 +15,7 @@ import AdminDashboardScreen from './src/screens/admin/AdminDashboardScreen';
 import AdminUserManagementScreen from './src/screens/admin/AdminUserManagementScreen';
 import AdminUserDetailScreen from './src/screens/admin/AdminUserDetailScreen';
 import AdminUserMembershipScreen from './src/screens/admin/AdminUserMembershipScreen';
+import AdminUserPastLessonsScreen from './src/screens/admin/AdminUserPastLessonsScreen';
 import AdminLessonManagementScreen from './src/screens/admin/AdminLessonManagementScreen';
 import AdminCreateLessonScreen from './src/screens/admin/AdminCreateLessonScreen';
 import AdminEditLessonScreen from './src/screens/admin/AdminEditLessonScreen';
@@ -153,6 +154,13 @@ function Navigation() {
           <Stack.Screen
             name="AdminUserMembership"
             component={AdminUserMembershipScreen}
+            options={{
+              animationTypeForReplace: 'push',
+            }}
+          />
+          <Stack.Screen
+            name="AdminUserPastLessons"
+            component={AdminUserPastLessonsScreen}
             options={{
               animationTypeForReplace: 'push',
             }}

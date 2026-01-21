@@ -7,7 +7,7 @@
 
 export const CHRISTMAS_CONFIG = {
   // 🎅 MAIN TOGGLE - Set to false after Christmas!
-  enabled: true,
+  enabled: false,
   
   // Auto-disable after a specific date (e.g., January 2nd, 2026)
   autoDisableDate: new Date('2026-01-02'),

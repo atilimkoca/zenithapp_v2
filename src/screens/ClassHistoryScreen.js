@@ -61,6 +61,24 @@ const formatHoursForLanguage = (hours, language) => {
   return formatted;
 };
 
+// Helper function to parse date string as local time (avoids UTC timezone issues)
+const parseDateAsLocal = (value) => {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    // Extract date-only part
+    const dateStr = value.split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [year, month, day] = dateStr.split('-').map(Number);
+      return new Date(year, month - 1, day);
+    }
+    return new Date(value);
+  }
+  if (value.seconds) {
+    return new Date(value.seconds * 1000);
+  }
+  return new Date(value);
+};
+
 // Helper function to calculate this week's lesson count
 const calculateThisWeekCount = (lessons) => {
   if (!lessons || !Array.isArray(lessons)) return 0;
@@ -69,12 +87,8 @@ const calculateThisWeekCount = (lessons) => {
     if (!lesson.scheduledDate || lesson.userStatus === 'cancelled') return false;
     
     try {
-      let lessonDate;
-      if (lesson.scheduledDate.includes('T')) {
-        lessonDate = new Date(lesson.scheduledDate.split('T')[0]);
-      } else {
-        lessonDate = new Date(lesson.scheduledDate);
-      }
+      const lessonDate = parseDateAsLocal(lesson.scheduledDate);
+      if (!lessonDate) return false;
       
       const today = new Date();
       const currentDay = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
@@ -103,12 +117,8 @@ const calculateThisMonthCount = (lessons) => {
     if (!lesson.scheduledDate || lesson.userStatus === 'cancelled') return false;
     
     try {
-      let lessonDate;
-      if (lesson.scheduledDate.includes('T')) {
-        lessonDate = new Date(lesson.scheduledDate.split('T')[0]);
-      } else {
-        lessonDate = new Date(lesson.scheduledDate);
-      }
+      const lessonDate = parseDateAsLocal(lesson.scheduledDate);
+      if (!lessonDate) return false;
       
       const today = new Date();
       return lessonDate.getMonth() === today.getMonth() && 
