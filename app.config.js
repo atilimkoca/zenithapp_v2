@@ -4,7 +4,7 @@ export default ({ config }) => ({
   ...config,
   name: 'Zenith Studio',
   slug: config.slug || 'zenith-studio',
-  version: '1.0.3',
+  version: '1.0.4',
   orientation: 'portrait',
   icon: './assets/app_icon.jpeg',
   userInterfaceStyle: 'light',
