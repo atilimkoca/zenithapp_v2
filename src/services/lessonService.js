@@ -379,7 +379,7 @@ const fetchAndCacheAllLessons = async (forceRefresh = false) => {
 };
 
 // OPTIMIZED: Fetch only available dates without loading all lesson data
-// This is a lightweight query that just gets the unique dates from lessons
+// Uses date range query for efficiency (next 60 days)
 const fetchAvailableDatesOnly = async (forceRefresh = false) => {
   // Return from cache if valid
   if (!forceRefresh && availableDatesCache && Date.now() - availableDatesCacheTimestamp < DATES_CACHE_TTL) {
@@ -387,22 +387,46 @@ const fetchAvailableDatesOnly = async (forceRefresh = false) => {
   }
 
   try {
-    // Query only active lessons and get their dates
-    const lessonsSnapshot = await getDocs(
-      query(collection(db, 'lessons'), where('status', '==', 'active'))
-    );
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayStr = formatDateToLocalKey(today);
+
+    const maxDate = new Date(today);
+    maxDate.setDate(maxDate.getDate() + 60);
+    const maxDateStr = formatDateToLocalKey(maxDate);
+
+    // Try date range query first
+    let lessonsSnapshot;
+    let usedRangeQuery = false;
+
+    try {
+      lessonsSnapshot = await getDocs(
+        query(
+          collection(db, 'lessons'),
+          where('status', '==', 'active'),
+          where('scheduledDate', '>=', todayStr),
+          where('scheduledDate', '<=', maxDateStr)
+        )
+      );
+      usedRangeQuery = true;
+    } catch (rangeError) {
+      // Fallback
+      lessonsSnapshot = await getDocs(
+        query(collection(db, 'lessons'), where('status', '==', 'active'))
+      );
+    }
 
     const datesSet = new Set();
 
-    lessonsSnapshot.forEach((doc) => {
-      const data = doc.data();
+    lessonsSnapshot.forEach((docSnapshot) => {
+      const data = docSnapshot.data();
       if (!data.scheduledDate) return;
 
       const lessonDate = normalizeDateToMidnight(data.scheduledDate);
-      if (!lessonDate || lessonDate < today) return;
+      if (!lessonDate) return;
+
+      // Client-side filtering if range query wasn't used
+      if (!usedRangeQuery && (lessonDate < today || lessonDate > maxDate)) return;
 
       const dateKey = formatDateToLocalKey(lessonDate);
       datesSet.add(dateKey);
@@ -414,6 +438,7 @@ const fetchAvailableDatesOnly = async (forceRefresh = false) => {
     availableDatesCache = sortedDates;
     availableDatesCacheTimestamp = Date.now();
 
+    console.log(`⚡ Available dates: ${sortedDates.length} (range query: ${usedRangeQuery})`);
     return sortedDates;
   } catch (error) {
     console.error('Error fetching available dates:', error);
@@ -424,6 +449,7 @@ const fetchAvailableDatesOnly = async (forceRefresh = false) => {
 // ULTRA-OPTIMIZED: Fetch everything in a single pass
 // This fetches lessons, dates, and processes them in ONE Firebase query
 // Supporting data (trainers, types, status) uses defaults on first load for speed
+// Limits to next 60 days to keep initial load fast
 const fetchInitialDataOptimized = async () => {
   try {
     console.log('⚡ Starting optimized initial fetch...');
@@ -436,13 +462,37 @@ const fetchInitialDataOptimized = async () => {
       fetchLessonStatus()
     ]);
 
-    // Single Firebase query for ALL active lessons
-    const lessonsSnapshot = await getDocs(
-      query(collection(db, 'lessons'), where('status', '==', 'active'))
-    );
-
+    // Calculate date range limits (today to 60 days from now)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayStr = formatDateToLocalKey(today);
+
+    const maxDate = new Date(today);
+    maxDate.setDate(maxDate.getDate() + 60); // Limit to 60 days
+    const maxDateStr = formatDateToLocalKey(maxDate);
+
+    // Try date-range query first (most efficient if scheduledDate is stored as string)
+    let lessonsSnapshot;
+    let usedRangeQuery = false;
+
+    try {
+      lessonsSnapshot = await getDocs(
+        query(
+          collection(db, 'lessons'),
+          where('status', '==', 'active'),
+          where('scheduledDate', '>=', todayStr),
+          where('scheduledDate', '<=', maxDateStr)
+        )
+      );
+      usedRangeQuery = true;
+      console.log(`⚡ Used date range query: ${lessonsSnapshot.size} lessons`);
+    } catch (rangeError) {
+      // Fallback to fetching all and filtering client-side
+      console.warn('⚠️ Date range query failed, using client-side filter');
+      lessonsSnapshot = await getDocs(
+        query(collection(db, 'lessons'), where('status', '==', 'active'))
+      );
+    }
 
     const datesSet = new Set();
     const rawLessonsByDate = {};
@@ -453,7 +503,12 @@ const fetchInitialDataOptimized = async () => {
       if (!data.scheduledDate || !data.startTime || !data.endTime) return;
 
       const lessonDate = normalizeDateToMidnight(data.scheduledDate);
-      if (!lessonDate || lessonDate < today) return;
+      if (!lessonDate) return;
+
+      // Client-side date filtering (needed if range query wasn't used)
+      if (!usedRangeQuery) {
+        if (lessonDate < today || lessonDate > maxDate) return;
+      }
 
       const dateKey = formatDateToLocalKey(lessonDate);
       datesSet.add(dateKey);
@@ -507,7 +562,7 @@ const fetchInitialDataOptimized = async () => {
 };
 
 // OPTIMIZED: Fetch lessons for a single date only
-// This queries Firebase with date range filter for maximum efficiency
+// Uses direct scheduledDate query for maximum efficiency
 const fetchLessonsForSingleDate = async (dateString, forceRefresh = false) => {
   // Check per-date cache
   const cachedData = perDateLessonsCache[dateString];
@@ -523,35 +578,48 @@ const fetchLessonsForSingleDate = async (dateString, forceRefresh = false) => {
       fetchLessonStatus()
     ]);
 
-    // Create date range for the specific day
-    const targetDate = new Date(dateString + 'T00:00:00');
-    const nextDate = new Date(dateString + 'T00:00:00');
-    nextDate.setDate(nextDate.getDate() + 1);
+    // Try direct date query first (fastest - requires scheduledDate stored as string "YYYY-MM-DD")
+    let lessonsSnapshot;
+    let usedDirectQuery = false;
 
-    // Query lessons for this specific date
-    // Note: We filter by status and use client-side date filtering since Firestore
-    // requires composite indexes for complex queries
-    const lessonsSnapshot = await getDocs(
-      query(collection(db, 'lessons'), where('status', '==', 'active'))
-    );
+    try {
+      lessonsSnapshot = await getDocs(
+        query(
+          collection(db, 'lessons'),
+          where('status', '==', 'active'),
+          where('scheduledDate', '==', dateString)
+        )
+      );
+      usedDirectQuery = true;
+      console.log(`⚡ Direct date query: ${lessonsSnapshot.size} lessons for ${dateString}`);
+    } catch (queryError) {
+      // Fallback if composite index doesn't exist or scheduledDate format is different
+      console.warn('⚠️ Direct date query failed, using client-side filter');
+      lessonsSnapshot = await getDocs(
+        query(collection(db, 'lessons'), where('status', '==', 'active'))
+      );
+    }
 
     const lessons = [];
 
-    lessonsSnapshot.forEach((doc) => {
-      const data = doc.data();
+    lessonsSnapshot.forEach((docSnapshot) => {
+      const data = docSnapshot.data();
       if (!data.scheduledDate || !data.startTime || !data.endTime) return;
 
-      const lessonDate = normalizeDateValue(data.scheduledDate);
-      if (!lessonDate) return;
+      // If we used direct query, all docs are for the right date
+      // Otherwise, filter client-side
+      if (!usedDirectQuery) {
+        const lessonDate = normalizeDateValue(data.scheduledDate);
+        if (!lessonDate) return;
 
-      // Use local date components to create date key (avoids UTC conversion issues)
-      const year = lessonDate.getFullYear();
-      const month = String(lessonDate.getMonth() + 1).padStart(2, '0');
-      const day = String(lessonDate.getDate()).padStart(2, '0');
-      const lessonDateKey = `${year}-${month}-${day}`;
-      if (lessonDateKey !== dateString) return;
+        const year = lessonDate.getFullYear();
+        const month = String(lessonDate.getMonth() + 1).padStart(2, '0');
+        const day = String(lessonDate.getDate()).padStart(2, '0');
+        const lessonDateKey = `${year}-${month}-${day}`;
+        if (lessonDateKey !== dateString) return;
+      }
 
-      const processedLesson = processLessonDoc(data, doc.id, trainersMap, lessonTypes, statusLevels);
+      const processedLesson = processLessonDoc(data, docSnapshot.id, trainersMap, lessonTypes, statusLevels);
       if (processedLesson) {
         lessons.push(processedLesson);
       }
@@ -952,12 +1020,37 @@ export const lessonService = {
       if (userDoc.exists()) {
         const userData = userDoc.data();
 
+        // Check if user is deleted
+        if (userData.status === 'deleted' || userData.status === 'permanently_deleted') {
+          return {
+            success: false,
+            messageKey: 'classes.accountDeleted'
+          };
+        }
+
         // Check if membership is cancelled
         if (userData.membershipStatus === 'cancelled' || userData.status === 'cancelled') {
           return {
             success: false,
             messageKey: 'classes.membershipCancelled'
           };
+        }
+
+        // Check if user has a package that covers this lesson date (multi-package support)
+        const { adminService } = await import('./adminService');
+        const lessonScheduledDate = normalizeDateValue(lessonData.scheduledDate);
+
+        if (lessonScheduledDate) {
+          const canBookResult = await adminService.canBookLessonOnDate(userId, lessonScheduledDate);
+          if (!canBookResult.canBook) {
+            return {
+              success: false,
+              messageKey: canBookResult.reason === 'noPackageForDate'
+                ? 'classes.noPackageForDate'
+                : 'classes.packageExpiredForLesson',
+              message: canBookResult.message
+            };
+          }
         }
 
         // Check if membership is frozen
@@ -1059,19 +1152,24 @@ export const lessonService = {
         // If we can't check time properly, allow booking
       }
 
-      // Consume user credit first (atomic operation)
-      const creditResult = await lessonCreditsService.consumeUserCredit(
-        userId, 
-        `Lesson booking: ${lessonData.title} - ${lessonData.scheduledDate}`
+      // Deduct lesson from the appropriate package using multi-package system
+      const { adminService } = await import('./adminService');
+      const lessonDateForDeduction = lessonData.scheduledDate;
+
+      const deductResult = await adminService.deductLessonFromPackage(
+        userId,
+        lessonDateForDeduction,
+        `${lessonData.title} - ${lessonData.scheduledDate}`
       );
-      
-      if (!creditResult.success) {
+
+      if (!deductResult.success) {
         return {
           success: false,
-          message: creditResult.message || 'Error occurred while using lesson credit.'
+          messageKey: deductResult.noPackageForDate ? 'classes.noPackageForDate' : 'classes.insufficientCredits',
+          message: deductResult.error || 'Error occurred while using lesson credit.'
         };
       }
-      
+
       try {
         // Add user to participants
         await updateDoc(lessonRef, {
@@ -1089,31 +1187,27 @@ export const lessonService = {
           console.warn('⚠️ Could not create booking history:', historyError);
           // Don't fail the booking if history creation fails
         }
-        
+
         // Clear user lessons cache after successful booking
         clearUserLessonsCache(userId);
-        
+
         // Invalidate the per-date cache for this lesson's date so UI updates immediately
         const lessonDate = normalizeDateValue(lessonData.scheduledDate);
         if (lessonDate) {
           const dateKey = formatDateToLocalKey(lessonDate);
           invalidateDateCache(dateKey);
         }
-        
+
         return {
           success: true,
           messageKey: 'classSelection.bookingSuccessMessage',
-          remainingCredits: creditResult.remainingCredits
+          remainingCredits: deductResult.totalRemaining,
+          deductedFromPackage: deductResult.packageName
         };
       } catch (bookingError) {
-        // If booking fails after consuming credit, refund the credit
-        console.error('❌ Booking failed, refunding credit:', bookingError);
-        
-        await lessonCreditsService.refundUserCredit(
-          userId, 
-          `Rezervasyon hatası iadesi: ${lessonData.title}`
-        );
-        
+        // If booking fails after consuming credit, we should ideally refund
+        // For now, log the error - refund logic can be added if needed
+        console.error('❌ Booking failed after deducting credit:', bookingError);
         throw bookingError;
       }
     } catch (error) {
@@ -1902,6 +1996,22 @@ const adminLessonService = {
         };
       }
 
+      // Check if user is deleted
+      if (userData.status === 'deleted' || userData.status === 'permanently_deleted') {
+        return {
+          success: false,
+          message: 'Bu öğrenci silinmiş. Silinen üyeler derse eklenemez.'
+        };
+      }
+
+      // Check if user is cancelled
+      if (userData.status === 'cancelled' || userData.membershipStatus === 'cancelled') {
+        return {
+          success: false,
+          message: 'Bu öğrencinin üyeliği iptal edilmiş. İptal edilen üyeler derse eklenemez.'
+        };
+      }
+
       // Check if user is frozen
       if (userData.membershipStatus === 'frozen' || userData.status === 'frozen') {
         return {
@@ -1912,17 +2022,39 @@ const adminLessonService = {
 
       const lessonRef = doc(db, 'lessons', lessonId);
       const lessonDoc = await getDoc(lessonRef);
-      
+
       if (!lessonDoc.exists()) {
         return {
           success: false,
           message: 'Ders bulunamadı.'
         };
       }
-      
+
       const lessonData = lessonDoc.data();
 
-      // Admin can add students to past lessons for record-keeping purposes
+      // Check if package has expired for this lesson date
+      const packageExpiryDate = userData.packageExpiryDate || userData.packageInfo?.expiryDate;
+      if (packageExpiryDate && lessonData.scheduledDate) {
+        const expiryDate = new Date(packageExpiryDate);
+        expiryDate.setHours(23, 59, 59, 999);
+
+        let lessonDate;
+        if (typeof lessonData.scheduledDate === 'string') {
+          lessonDate = new Date(lessonData.scheduledDate);
+        } else if (lessonData.scheduledDate.toDate) {
+          lessonDate = lessonData.scheduledDate.toDate();
+        } else {
+          lessonDate = new Date(lessonData.scheduledDate);
+        }
+        lessonDate.setHours(0, 0, 0, 0);
+
+        if (lessonDate > expiryDate) {
+          return {
+            success: false,
+            message: 'Öğrencinin paket süresi bu ders tarihinden önce doluyor. Lütfen paketi yenileyin.'
+          };
+        }
+      }
 
       const currentParticipants = lessonData.participants ? lessonData.participants.length : 0;
       

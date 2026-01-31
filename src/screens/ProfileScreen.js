@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import {
   PanResponder,
   Animated,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -28,6 +29,7 @@ import { profileService } from '../services/profileService';
 import { logoutUser, deleteUserAccount } from '../services/authService';
 import UniqueHeader from '../components/UniqueHeader';
 import { lessonCreditsService } from '../services/lessonCreditsService';
+import { adminService } from '../services/adminService';
 import NotificationScreen from './NotificationScreen';
 
 export default function ProfileScreen({ navigation }) {
@@ -48,6 +50,8 @@ export default function ProfileScreen({ navigation }) {
     totalHours: 0
   });
   const [remainingCredits, setRemainingCredits] = useState(0);
+  const [userPackages, setUserPackages] = useState([]);
+  const [loadingPackages, setLoadingPackages] = useState(true);
 
   // Animation for modal slide
   const pan = useRef(new Animated.Value(0)).current;
@@ -165,11 +169,22 @@ export default function ProfileScreen({ navigation }) {
   useEffect(() => {
     loadUserStats();
     loadUserCredits();
+    loadUserPackages();
   }, [user]);
+
+  // Refresh data when screen comes into focus (after booking/cancelling lessons)
+  useFocusEffect(
+    useCallback(() => {
+      if (user?.uid) {
+        loadUserCredits();
+        loadUserPackages();
+      }
+    }, [user?.uid])
+  );
 
   const loadUserCredits = async () => {
     if (!user?.uid) return;
-    
+
     try {
       const result = await lessonCreditsService.getUserCredits(user.uid);
       if (result.success) {
@@ -177,6 +192,22 @@ export default function ProfileScreen({ navigation }) {
       }
     } catch (error) {
       console.error('Error loading user credits:', error);
+    }
+  };
+
+  const loadUserPackages = async () => {
+    if (!user?.uid) return;
+
+    setLoadingPackages(true);
+    try {
+      const result = await adminService.getUserPackages(user.uid);
+      if (result.success) {
+        setUserPackages(result.packages || []);
+      }
+    } catch (error) {
+      console.error('Error loading user packages:', error);
+    } finally {
+      setLoadingPackages(false);
     }
   };
 
@@ -221,6 +252,7 @@ export default function ProfileScreen({ navigation }) {
     setRefreshing(true);
     await loadUserStats();
     await loadUserCredits();
+    await loadUserPackages();
     setRefreshing(false);
   };
 
@@ -756,7 +788,7 @@ export default function ProfileScreen({ navigation }) {
           {/* Package End Date */}
           <View style={styles.statsGrid}>
             <View style={styles.modernStatCard}>
-              <View style={[styles.statIconBox, { backgroundColor: colors.info + '15' }]}> 
+              <View style={[styles.statIconBox, { backgroundColor: colors.info + '15' }]}>
                 <Ionicons name="time-outline" size={22} color={colors.info} />
               </View>
               <Text style={styles.modernStatValue}>
@@ -765,6 +797,104 @@ export default function ProfileScreen({ navigation }) {
               <Text style={styles.modernStatLabel}>{t('profile.packageEndDate')}</Text>
             </View>
           </View>
+
+          {/* My Packages Section */}
+          <Text style={styles.sectionHeader}>{t('profile.myPackages')}</Text>
+
+          {/* Total Remaining Sessions */}
+          <View style={styles.totalSessionsCard}>
+            <View style={styles.totalSessionsContent}>
+              <View style={[styles.totalSessionsIconBox, { backgroundColor: colors.primary + '15' }]}>
+                <Ionicons name="ticket" size={28} color={colors.primary} />
+              </View>
+              <View style={styles.totalSessionsInfo}>
+                <Text style={styles.totalSessionsLabel}>{t('profile.totalRemainingSessions')}</Text>
+                <Text style={styles.totalSessionsValue}>
+                  {userPackages.reduce((total, pkg) => total + (pkg.remainingLessons || 0), 0)} {t('profile.sessions')}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Packages List */}
+          {loadingPackages ? (
+            <View style={styles.packagesLoading}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={styles.packagesLoadingText}>{t('loading')}</Text>
+            </View>
+          ) : userPackages.length > 0 ? (
+            <View style={styles.packagesContainer}>
+              {userPackages.map((pkg, index) => {
+                const isActive = pkg.status === 'active';
+                const isExpired = pkg.status === 'expired';
+                const isUpcoming = pkg.status === 'upcoming';
+                const isDepleted = pkg.status === 'depleted';
+
+                let statusColor = colors.warning;
+                let statusText = t('profile.packagePending');
+
+                if (isActive) {
+                  statusColor = colors.success;
+                  statusText = t('profile.packageActive');
+                } else if (isExpired) {
+                  statusColor = colors.error;
+                  statusText = t('profile.packageExpired');
+                } else if (isUpcoming) {
+                  statusColor = colors.info;
+                  statusText = t('profile.packageUpcoming');
+                } else if (isDepleted) {
+                  statusColor = colors.textSecondary;
+                  statusText = t('profile.packageDepleted');
+                }
+
+                return (
+                  <View key={pkg.id || index} style={[styles.packageCard, isExpired && styles.packageCardExpired]}>
+                    <View style={styles.packageCardHeader}>
+                      <View style={styles.packageNameRow}>
+                        <Text style={styles.packageName}>{pkg.packageName || t('profile.package')}</Text>
+                        <View style={[styles.packageStatusBadge, { backgroundColor: statusColor + '15' }]}>
+                          <View style={[styles.packageStatusDot, { backgroundColor: statusColor }]} />
+                          <Text style={[styles.packageStatusText, { color: statusColor }]}>{statusText}</Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={styles.packageCardBody}>
+                      <View style={styles.packageInfoRow}>
+                        <View style={styles.packageInfoItem}>
+                          <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+                          <Text style={styles.packageInfoLabel}>{t('profile.startDate')}</Text>
+                          <Text style={styles.packageInfoValue}>{formatPackageDate(pkg.startDate)}</Text>
+                        </View>
+                        <View style={styles.packageInfoItem}>
+                          <Ionicons name="calendar" size={16} color={colors.textSecondary} />
+                          <Text style={styles.packageInfoLabel}>{t('profile.endDate')}</Text>
+                          <Text style={styles.packageInfoValue}>{formatPackageDate(pkg.expiryDate)}</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.packageLessonsRow}>
+                        <View style={styles.packageLessonsItem}>
+                          <Text style={styles.packageLessonsValue}>{pkg.remainingLessons || 0}</Text>
+                          <Text style={styles.packageLessonsLabel}>{t('profile.remainingLessons')}</Text>
+                        </View>
+                        <View style={styles.packageLessonsDivider} />
+                        <View style={styles.packageLessonsItem}>
+                          <Text style={styles.packageLessonsValue}>{pkg.totalLessons || 0}</Text>
+                          <Text style={styles.packageLessonsLabel}>{t('profile.totalLessonsPackage')}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <View style={styles.noPackagesContainer}>
+              <Ionicons name="cube-outline" size={48} color={colors.textLight} />
+              <Text style={styles.noPackagesText}>{t('profile.noPackages')}</Text>
+            </View>
+          )}
 
           {/* Admin Credit Management */}
           {userData?.role === 'admin' && (
@@ -1753,5 +1883,171 @@ const styles = StyleSheet.create({
   },
   deleteModalButtonDisabled: {
     opacity: 0.6,
+  },
+
+  // My Packages Section Styles
+  totalSessionsCard: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: colors.primary + '20',
+  },
+  totalSessionsContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  totalSessionsIconBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  totalSessionsInfo: {
+    flex: 1,
+  },
+  totalSessionsLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 4,
+    fontWeight: '500',
+  },
+  totalSessionsValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+  packagesLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  packagesLoadingText: {
+    marginLeft: 10,
+    color: colors.textSecondary,
+    fontSize: 14,
+  },
+  packagesContainer: {
+    marginBottom: 24,
+  },
+  packageCard: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  packageCardExpired: {
+    opacity: 0.7,
+    backgroundColor: colors.lightGray,
+  },
+  packageCardHeader: {
+    marginBottom: 12,
+  },
+  packageNameRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  packageName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  packageStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  packageStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
+  packageStatusText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  packageCardBody: {},
+  packageInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  packageInfoItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  packageInfoLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 4,
+    marginBottom: 2,
+  },
+  packageInfoValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  packageLessonsRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    padding: 12,
+  },
+  packageLessonsItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  packageLessonsDivider: {
+    width: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: 12,
+  },
+  packageLessonsValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: colors.primary,
+    marginBottom: 2,
+  },
+  packageLessonsLabel: {
+    fontSize: 10,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  noPackagesContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  noPackagesText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
 });

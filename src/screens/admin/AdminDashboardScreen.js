@@ -226,13 +226,8 @@ export default function AdminDashboardScreen({ navigation }) {
           </View>
         )}
       </View>
-      <View style={styles.actionContent}>
-        <Text style={styles.actionTitle}>{title}</Text>
-        <Text style={styles.actionDescription} numberOfLines={2}>{description}</Text>
-      </View>
-      <View style={styles.actionArrow}>
-        <Ionicons name="chevron-forward" size={20} color={colors.gray} />
-      </View>
+      <Text style={styles.actionTitle}>{title}</Text>
+      <Text style={styles.actionDescription} numberOfLines={1}>{description}</Text>
     </TouchableOpacity>
   );
 
@@ -321,14 +316,14 @@ export default function AdminDashboardScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Admin Actions */}
+          {/* Admin Actions - Horizontal Scroll */}
           <View style={styles.actionsSection}>
-            <Text style={styles.sectionTitle}>Yönetim İşlemleri</Text>
-            <View style={styles.actionGrid}>
+            <Text style={styles.sectionTitle}>Hızlı İşlemler</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionRow}>
               
               <ActionCard
-                title="Üye Yönetimi"
-                description="Kullanıcıları onayla, reddet veya düzenle"
+                title="Üyeler"
+                description="Yönet"
                 icon="people"
                 color={colors.primary}
                 onPress={() => navigateToSection('AdminUserManagement')}
@@ -336,24 +331,24 @@ export default function AdminDashboardScreen({ navigation }) {
               />
 
               <ActionCard
-                title="Ders Yönetimi"
-                description="Ders programını ve sınıfları yönet"
+                title="Dersler"
+                description="Planla"
                 icon="calendar"
                 color={colors.success}
                 onPress={() => navigateToSection('AdminLessonManagement')}
               />
 
               <ActionCard
-                title="Bildirim Merkezi"
-                description="Toplu bildirim ve duyuru gönder"
+                title="Bildirim"
+                description="Gönder"
                 icon="notifications"
                 color="#FF6B6B"
                 onPress={openNotificationModal}
               />
 
               <ActionCard
-                title="Çıkış Yap"
-                description="Yönetici hesabından güvenle çıkış yap"
+                title="Çıkış"
+                description="Güvenli"
                 icon="log-out"
                 color="#9E9E9E"
                 onPress={() => {
@@ -378,8 +373,7 @@ export default function AdminDashboardScreen({ navigation }) {
                   );
                 }}
               />
-
-            </View>
+            </ScrollView>
           </View>
 
         </View>
@@ -657,61 +651,60 @@ const styles = StyleSheet.create({
   actionsSection: {
     marginBottom: 24,
   },
-  actionGrid: {
+  actionRow: {
+    paddingRight: 20,
     gap: 12,
   },
   actionCard: {
-    flexDirection: 'row',
+    width: 110,
+    height: 110,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.white,
     borderRadius: 20,
-    padding: 16,
+    padding: 12,
     ...colors.shadow,
-    shadowOpacity: 0.05,
-    elevation: 2,
+    shadowOpacity: 0.08,
+    elevation: 3,
     borderWidth: 1,
     borderColor: colors.lightGray,
+    marginRight: 4,
   },
   actionIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
-  },
-  actionContent: {
-    flex: 1,
+    marginBottom: 8,
   },
   actionTitle: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: 4,
+    marginBottom: 2,
+    textAlign: 'center',
   },
   actionDescription: {
-    fontSize: 13,
+    fontSize: 11,
     color: colors.textSecondary,
-    lineHeight: 18,
+    textAlign: 'center',
   },
   actionBadge: {
     position: 'absolute',
-    top: -6,
-    right: -6,
+    top: -4,
+    right: -4,
     backgroundColor: colors.error,
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderWidth: 2,
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderWidth: 1.5,
     borderColor: colors.white,
   },
   badgeText: {
     color: colors.white,
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 'bold',
-  },
-  actionArrow: {
-    marginLeft: 12,
   },
 
   // Activity Section

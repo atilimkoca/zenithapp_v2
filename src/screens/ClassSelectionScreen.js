@@ -487,6 +487,59 @@ export default function ClassSelectionScreen() {
 
     console.log(`✅ Filtered to ${filtered.length} lessons matching user's ${userAccessType} package`);
 
+    // Filter lessons by package date ranges (multi-package support)
+    const userPackages = userData?.packages || [];
+
+    // Build date ranges from packages array, or fall back to legacy single package
+    let packageDateRanges = [];
+
+    if (userPackages.length > 0) {
+      // Use multi-package system
+      packageDateRanges = userPackages
+        .filter(pkg => pkg.status !== 'cancelled' && pkg.remainingLessons > 0)
+        .map(pkg => ({
+          start: new Date(pkg.startDate),
+          end: new Date(pkg.expiryDate)
+        }));
+    } else {
+      // Fall back to legacy single package
+      const packageExpiryDate = userData?.packageExpiryDate || userData?.packageInfo?.expiryDate;
+      const packageStartDate = userData?.packageStartDate || userData?.packageInfo?.assignedAt;
+
+      if (packageExpiryDate) {
+        packageDateRanges = [{
+          start: packageStartDate ? new Date(packageStartDate) : new Date(0),
+          end: new Date(packageExpiryDate)
+        }];
+      }
+    }
+
+    // Filter lessons to only show those within any package date range
+    if (packageDateRanges.length > 0) {
+      filtered = filtered.filter(lesson => {
+        let lessonDate;
+        const dateVal = lesson.scheduledDate;
+        if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) {
+          const [year, month, day] = dateVal.split('-').map(Number);
+          lessonDate = new Date(year, month - 1, day);
+        } else {
+          lessonDate = new Date(dateVal);
+        }
+        lessonDate.setHours(12, 0, 0, 0); // Normalize to noon
+
+        // Check if lesson falls within ANY package date range
+        return packageDateRanges.some(range => {
+          const startDate = new Date(range.start);
+          startDate.setHours(0, 0, 0, 0);
+          const endDate = new Date(range.end);
+          endDate.setHours(23, 59, 59, 999);
+          return lessonDate >= startDate && lessonDate <= endDate;
+        });
+      });
+
+      console.log(`📅 Filtered by ${packageDateRanges.length} package date range(s): ${filtered.length} lessons remaining`);
+    }
+
     // Filter by search query
     if (debouncedSearchQuery.trim()) {
       const query = debouncedSearchQuery.toLowerCase();
@@ -498,7 +551,7 @@ export default function ClassSelectionScreen() {
     }
 
     setFilteredLessons(filtered);
-  }, [currentDayLessons, userData?.packageInfo?.packageType, debouncedSearchQuery]);
+  }, [currentDayLessons, userData?.packageInfo?.packageType, userData?.packages, userData?.packageExpiryDate, userData?.packageInfo?.expiryDate, userData?.packageStartDate, userData?.packageInfo?.assignedAt, debouncedSearchQuery]);
 
   // Use availableDates directly instead of computing from lessons
   const availableDateKeys = useMemo(() => availableDates, [availableDates]);

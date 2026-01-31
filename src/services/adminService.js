@@ -820,5 +820,515 @@ export const adminService = {
         error: 'Paket yenilenirken hata oluştu: ' + error.message
       };
     }
+  },
+
+  // ============================================
+  // MULTI-PACKAGE SYSTEM
+  // ============================================
+
+  /**
+   * Add a new package to user's packages array
+   */
+  addPackageToUser: async (userId, packageDetails, assignedBy) => {
+    try {
+      console.log(`📦 Adding package to user ${userId}:`, packageDetails);
+
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        return { success: false, error: 'Kullanıcı bulunamadı' };
+      }
+
+      const userData = userDoc.data();
+
+      // Get package details from database if packageId provided
+      let packageName = packageDetails.packageName || 'Standart Paket';
+      let lessonCount = packageDetails.lessonCount || packageDetails.remainingClasses || 8;
+      let packageType = packageDetails.packageType || 'group';
+      let price = packageDetails.price || 0;
+
+      if (packageDetails.packageId) {
+        const packageRef = doc(db, 'packages', packageDetails.packageId);
+        const packageDoc = await getDoc(packageRef);
+        if (packageDoc.exists()) {
+          const pkgData = packageDoc.data();
+          packageName = pkgData.name || packageName;
+          lessonCount = pkgData.lessonCount || pkgData.lessons || pkgData.classes || lessonCount;
+          packageType = pkgData.packageType || packageType;
+          price = pkgData.price || price;
+        }
+      }
+
+      // Calculate dates
+      const startDate = packageDetails.startDate
+        ? new Date(packageDetails.startDate)
+        : new Date();
+      const durationMonths = packageDetails.duration || 1;
+      const expiryDate = new Date(startDate);
+      expiryDate.setMonth(expiryDate.getMonth() + durationMonths);
+
+      // Create new package entry
+      const newPackage = {
+        id: `pkg_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
+        packageId: packageDetails.packageId || null,
+        packageName: packageName,
+        packageType: packageType,
+        startDate: startDate.toISOString(),
+        expiryDate: expiryDate.toISOString(),
+        totalLessons: lessonCount,
+        remainingLessons: lessonCount,
+        assignedAt: new Date().toISOString(),
+        assignedBy: assignedBy,
+        status: 'active',
+        price: price,
+        duration: durationMonths
+      };
+
+      // Get existing packages array or initialize
+      const existingPackages = userData.packages || [];
+
+      // Migrate legacy packageInfo if exists and packages array is empty
+      if (existingPackages.length === 0 && userData.packageInfo) {
+        const legacyPackage = adminService.migrateLegacyPackage(userData);
+        if (legacyPackage) {
+          existingPackages.push(legacyPackage);
+        }
+      }
+
+      // Add new package
+      existingPackages.push(newPackage);
+
+      // Calculate total remaining lessons across all active packages
+      const now = new Date();
+      const totalRemainingClasses = existingPackages.reduce((sum, pkg) => {
+        const pkgStart = new Date(pkg.startDate);
+        const pkgExpiry = new Date(pkg.expiryDate);
+        if (pkgStart <= now && pkgExpiry >= now && pkg.status === 'active') {
+          return sum + (pkg.remainingLessons || 0);
+        }
+        return sum;
+      }, 0);
+
+      // Find the latest expiry date among active packages
+      const latestExpiry = existingPackages
+        .filter(pkg => pkg.status === 'active')
+        .reduce((latest, pkg) => {
+          const expiry = new Date(pkg.expiryDate);
+          return expiry > latest ? expiry : latest;
+        }, new Date(0));
+
+      // Update user document
+      const updateData = {
+        packages: existingPackages,
+        remainingClasses: totalRemainingClasses,
+        lessonCredits: totalRemainingClasses,
+        packageExpiryDate: latestExpiry.toISOString(),
+        packageInfo: {
+          packageId: newPackage.id,
+          packageName: newPackage.packageName,
+          packageType: newPackage.packageType,
+          lessonCount: newPackage.totalLessons,
+          assignedAt: newPackage.startDate,
+          expiryDate: newPackage.expiryDate
+        },
+        updatedAt: new Date().toISOString()
+      };
+
+      // If user status is pending, also approve them
+      if (userData.status === 'pending') {
+        updateData.status = 'approved';
+        updateData.membershipStatus = 'active';
+        updateData.isActive = true;
+        updateData.approvedAt = new Date().toISOString();
+        updateData.approvedBy = assignedBy;
+        updateData.packageStartDate = startDate.toISOString();
+      }
+
+      await updateDoc(userRef, updateData);
+
+      console.log(`✅ Package added successfully to user ${userId}`);
+
+      return {
+        success: true,
+        message: 'Paket başarıyla eklendi',
+        package: newPackage,
+        totalPackages: existingPackages.length,
+        totalRemainingClasses
+      };
+    } catch (error) {
+      console.error('❌ Error adding package to user:', error);
+      return { success: false, error: 'Paket eklenirken bir hata oluştu' };
+    }
+  },
+
+  /**
+   * Get all packages for a user
+   */
+  getUserPackages: async (userId) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        return { success: false, error: 'Kullanıcı bulunamadı' };
+      }
+
+      const userData = userDoc.data();
+      let packages = userData.packages || [];
+
+      // Migrate legacy packageInfo if packages array is empty
+      if (packages.length === 0 && userData.packageInfo) {
+        const legacyPackage = adminService.migrateLegacyPackage(userData);
+        if (legacyPackage) {
+          packages = [legacyPackage];
+        }
+      }
+
+      // Update package statuses based on current date
+      const now = new Date();
+      packages = packages.map(pkg => {
+        const expiryDate = new Date(pkg.expiryDate);
+        const startDate = new Date(pkg.startDate);
+
+        let status = pkg.status;
+        if (expiryDate < now) {
+          status = 'expired';
+        } else if (startDate > now) {
+          status = 'upcoming';
+        } else if (pkg.remainingLessons <= 0) {
+          status = 'depleted';
+        } else {
+          status = 'active';
+        }
+
+        return { ...pkg, status };
+      });
+
+      return {
+        success: true,
+        packages,
+        totalPackages: packages.length
+      };
+    } catch (error) {
+      console.error('❌ Error getting user packages:', error);
+      return { success: false, error: 'Paketler getirilemedi' };
+    }
+  },
+
+  /**
+   * Get packages that cover a specific date
+   */
+  getPackagesForDate: (packages, targetDate) => {
+    const date = new Date(targetDate);
+    date.setHours(12, 0, 0, 0);
+
+    return packages.filter(pkg => {
+      const startDate = new Date(pkg.startDate);
+      startDate.setHours(0, 0, 0, 0);
+      const expiryDate = new Date(pkg.expiryDate);
+      expiryDate.setHours(23, 59, 59, 999);
+
+      return startDate <= date && expiryDate >= date &&
+             pkg.status !== 'cancelled' &&
+             pkg.remainingLessons > 0;
+    });
+  },
+
+  /**
+   * Check if user can book a lesson on a specific date
+   */
+  canBookLessonOnDate: async (userId, lessonDate) => {
+    try {
+      const packagesResult = await adminService.getUserPackages(userId);
+      if (!packagesResult.success) {
+        return { canBook: false, error: packagesResult.error };
+      }
+
+      const eligiblePackages = adminService.getPackagesForDate(packagesResult.packages, lessonDate);
+
+      if (eligiblePackages.length === 0) {
+        return {
+          canBook: false,
+          reason: 'noPackageForDate',
+          message: 'Bu tarih için geçerli bir paketiniz bulunmuyor'
+        };
+      }
+
+      const hasCredits = eligiblePackages.some(pkg => pkg.remainingLessons > 0);
+      if (!hasCredits) {
+        return {
+          canBook: false,
+          reason: 'noCredits',
+          message: 'Bu tarih aralığındaki paketinizde kalan ders yok'
+        };
+      }
+
+      return {
+        canBook: true,
+        eligiblePackages,
+        message: 'Ders rezervasyonu yapılabilir'
+      };
+    } catch (error) {
+      console.error('❌ Error checking booking eligibility:', error);
+      return { canBook: false, error: 'Kontrol yapılırken bir hata oluştu' };
+    }
+  },
+
+  /**
+   * Deduct a lesson from the appropriate package based on lesson date
+   */
+  deductLessonFromPackage: async (userId, lessonDate, lessonInfo = '') => {
+    try {
+      const packagesResult = await adminService.getUserPackages(userId);
+      if (!packagesResult.success) {
+        return { success: false, error: packagesResult.error };
+      }
+
+      const eligiblePackages = adminService.getPackagesForDate(packagesResult.packages, lessonDate);
+
+      if (eligiblePackages.length === 0) {
+        return {
+          success: false,
+          error: 'Bu tarih için geçerli bir paket bulunamadı',
+          noPackageForDate: true
+        };
+      }
+
+      // Use the first eligible package
+      const targetPackage = eligiblePackages[0];
+
+      if (targetPackage.remainingLessons <= 0) {
+        return { success: false, error: 'Pakette kalan ders yok' };
+      }
+
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        return { success: false, error: 'Kullanıcı bulunamadı' };
+      }
+
+      const userData = userDoc.data();
+      const packages = userData.packages || [];
+
+      // Update the specific package
+      const updatedPackages = packages.map(pkg => {
+        if (pkg.id === targetPackage.id) {
+          return {
+            ...pkg,
+            remainingLessons: pkg.remainingLessons - 1,
+            lastUsedAt: new Date().toISOString(),
+            lastUsedFor: lessonInfo
+          };
+        }
+        return pkg;
+      });
+
+      // Calculate new total remaining
+      const now = new Date();
+      const totalRemainingClasses = updatedPackages.reduce((sum, pkg) => {
+        const pkgStart = new Date(pkg.startDate);
+        const pkgExpiry = new Date(pkg.expiryDate);
+        if (pkgStart <= now && pkgExpiry >= now && pkg.status !== 'cancelled') {
+          return sum + (pkg.remainingLessons || 0);
+        }
+        return sum;
+      }, 0);
+
+      await updateDoc(userRef, {
+        packages: updatedPackages,
+        remainingClasses: totalRemainingClasses,
+        lessonCredits: totalRemainingClasses,
+        updatedAt: new Date().toISOString()
+      });
+
+      return {
+        success: true,
+        deductedFromPackage: targetPackage.id,
+        packageName: targetPackage.packageName,
+        remainingInPackage: targetPackage.remainingLessons - 1,
+        totalRemaining: totalRemainingClasses
+      };
+    } catch (error) {
+      console.error('❌ Error deducting lesson from package:', error);
+      return { success: false, error: 'Ders düşülürken bir hata oluştu' };
+    }
+  },
+
+  /**
+   * Refund a lesson to the appropriate package based on lesson date (for cancellations)
+   */
+  refundLessonToPackage: async (userId, lessonDate, lessonInfo = '') => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        return { success: false, error: 'Kullanıcı bulunamadı' };
+      }
+
+      const userData = userDoc.data();
+      let packages = userData.packages || [];
+
+      // If no packages array, try to use legacy packageInfo
+      if (packages.length === 0 && userData.packageInfo) {
+        const legacyPackage = adminService.migrateLegacyPackage(userData);
+        if (legacyPackage) {
+          packages = [legacyPackage];
+        }
+      }
+
+      if (packages.length === 0) {
+        // Fallback: just increment the legacy fields
+        await updateDoc(userRef, {
+          remainingClasses: increment(1),
+          lessonCredits: increment(1),
+          updatedAt: new Date().toISOString()
+        });
+        return {
+          success: true,
+          message: 'Ders kredisi iade edildi (legacy)',
+          usedLegacyRefund: true
+        };
+      }
+
+      // Find the package that covers the lesson date
+      const date = new Date(lessonDate);
+      date.setHours(12, 0, 0, 0);
+
+      let targetPackage = packages.find(pkg => {
+        const startDate = new Date(pkg.startDate);
+        startDate.setHours(0, 0, 0, 0);
+        const expiryDate = new Date(pkg.expiryDate);
+        expiryDate.setHours(23, 59, 59, 999);
+
+        return startDate <= date && expiryDate >= date && pkg.status !== 'cancelled';
+      });
+
+      // If no package covers the date, use the most recent active package
+      if (!targetPackage) {
+        const now = new Date();
+        const activePackages = packages.filter(pkg => {
+          const expiryDate = new Date(pkg.expiryDate);
+          return expiryDate >= now && pkg.status !== 'cancelled';
+        });
+
+        if (activePackages.length > 0) {
+          // Sort by start date descending and pick the most recent
+          activePackages.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+          targetPackage = activePackages[0];
+        } else {
+          // Fallback to any package if all are expired
+          targetPackage = packages[packages.length - 1];
+        }
+      }
+
+      // Update the specific package
+      const updatedPackages = packages.map(pkg => {
+        if (pkg.id === targetPackage.id) {
+          const newRemaining = (pkg.remainingLessons || 0) + 1;
+          // Don't exceed total lessons
+          const maxLessons = pkg.totalLessons || newRemaining;
+          return {
+            ...pkg,
+            remainingLessons: Math.min(newRemaining, maxLessons),
+            lastRefundAt: new Date().toISOString(),
+            lastRefundFor: lessonInfo
+          };
+        }
+        return pkg;
+      });
+
+      // Calculate new total remaining
+      const now = new Date();
+      const totalRemainingClasses = updatedPackages.reduce((sum, pkg) => {
+        const pkgStart = new Date(pkg.startDate);
+        const pkgExpiry = new Date(pkg.expiryDate);
+        if (pkgStart <= now && pkgExpiry >= now && pkg.status !== 'cancelled') {
+          return sum + (pkg.remainingLessons || 0);
+        }
+        return sum;
+      }, 0);
+
+      await updateDoc(userRef, {
+        packages: updatedPackages,
+        remainingClasses: totalRemainingClasses,
+        lessonCredits: totalRemainingClasses,
+        updatedAt: new Date().toISOString()
+      });
+
+      const refundedPackage = updatedPackages.find(p => p.id === targetPackage.id);
+
+      return {
+        success: true,
+        refundedToPackage: targetPackage.id,
+        packageName: targetPackage.packageName,
+        remainingInPackage: refundedPackage?.remainingLessons || 0,
+        totalRemaining: totalRemainingClasses,
+        message: 'Ders kredisi pakete iade edildi'
+      };
+    } catch (error) {
+      console.error('❌ Error refunding lesson to package:', error);
+      return { success: false, error: 'Ders iade edilirken bir hata oluştu' };
+    }
+  },
+
+  /**
+   * Migrate legacy single packageInfo to packages array format
+   */
+  migrateLegacyPackage: (userData) => {
+    if (!userData.packageInfo && !userData.packageExpiryDate) {
+      return null;
+    }
+
+    const packageInfo = userData.packageInfo || {};
+    const remainingClasses = userData.remainingClasses || userData.lessonCredits || 0;
+
+    if (remainingClasses <= 0 && !userData.packageExpiryDate) {
+      return null;
+    }
+
+    return {
+      id: packageInfo.packageId || `legacy_${Date.now()}`,
+      packageId: packageInfo.packageId || null,
+      packageName: packageInfo.packageName || 'Mevcut Paket',
+      packageType: packageInfo.packageType || userData.packageType || 'group',
+      startDate: userData.packageStartDate || packageInfo.assignedAt || userData.approvedAt || new Date().toISOString(),
+      expiryDate: userData.packageExpiryDate || packageInfo.expiryDate || new Date().toISOString(),
+      totalLessons: packageInfo.lessonCount || remainingClasses,
+      remainingLessons: remainingClasses,
+      assignedAt: packageInfo.assignedAt || userData.approvedAt || new Date().toISOString(),
+      assignedBy: userData.approvedBy || 'system_migration',
+      status: 'active',
+      isLegacy: true
+    };
+  },
+
+  /**
+   * Get visible date ranges for user (union of all package date ranges)
+   */
+  getVisibleDateRanges: async (userId) => {
+    try {
+      const packagesResult = await adminService.getUserPackages(userId);
+      if (!packagesResult.success || packagesResult.packages.length === 0) {
+        return { success: false, ranges: [] };
+      }
+
+      const ranges = packagesResult.packages
+        .filter(pkg => pkg.status !== 'cancelled')
+        .map(pkg => ({
+          packageId: pkg.id,
+          packageName: pkg.packageName,
+          startDate: pkg.startDate,
+          expiryDate: pkg.expiryDate,
+          hasCredits: pkg.remainingLessons > 0
+        }));
+
+      return { success: true, ranges };
+    } catch (error) {
+      console.error('❌ Error getting visible date ranges:', error);
+      return { success: false, error: 'Tarih aralığı getirilemedi' };
+    }
   }
 };

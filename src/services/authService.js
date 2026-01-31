@@ -114,9 +114,26 @@ export const loginUser = async (email, password) => {
     
     const userData = userDoc.data();
 
+    // Check if user is deleted or cancelled - block login completely
+    if (userData.status === 'deleted' || userData.status === 'permanently_deleted') {
+      await signOut(auth); // Sign them out immediately
+      return {
+        success: false,
+        messageKey: 'auth.accountDeletedMessage'
+      };
+    }
+
+    if (userData.status === 'cancelled' || userData.membershipStatus === 'cancelled') {
+      await signOut(auth); // Sign them out immediately
+      return {
+        success: false,
+        messageKey: 'auth.accountCancelledMessage'
+      };
+    }
+
     // Check if user is approved (skip check for admins and instructors)
     const isAdminOrInstructor = userData && (userData.role === 'admin' || userData.role === 'instructor');
-    
+
     if (userData && !isAdminOrInstructor && userData.status !== 'approved') {
       // Don't sign out the user, just return status info
       // This allows them to stay logged in and see the pending screen

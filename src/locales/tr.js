@@ -121,6 +121,7 @@ export default {
     accountPendingMessage: 'Hesabınız admin onayı bekliyor. Onaylandıktan sonra tam erişim sağlayabileceksiniz.',
     accountRejectedMessage: 'Hesabınız reddedilmiş. Daha fazla bilgi için lütfen bizimle iletişime geçin.',
     accountDeletedMessage: 'Bu hesap artık mevcut değil. Lütfen yeniden kayıt olun.',
+    accountCancelledMessage: 'Üyeliğiniz iptal edilmiştir. Daha fazla bilgi için lütfen bizimle iletişime geçin.',
 
     // Account Deletion
     deleteAccount: 'Hesabı Sil',
@@ -147,6 +148,19 @@ export default {
     totalLessons: 'Toplam Dersler',
     thisMonth: 'Bu Ay',
     packageEndDate: 'Paket Bitiş Tarihi',
+    myPackages: 'Paketlerim',
+    totalRemainingSessions: 'Toplam Kalan Ders Hakkı',
+    sessions: 'ders',
+    package: 'Paket',
+    packageActive: 'Aktif',
+    packageExpired: 'Süresi Doldu',
+    packagePending: 'Beklemede',
+    packageUpcoming: 'Başlamamış',
+    packageDepleted: 'Ders Bitti',
+    startDate: 'Başlangıç',
+    endDate: 'Bitiş',
+    totalLessonsPackage: 'Toplam Ders',
+    noPackages: 'Henüz paket bulunmuyor',
     thisWeek: 'Bu Hafta',
     completionRate: 'Tamamlama Oranı',
     profileUpdated: 'Profil bilgileri güncellendi.',
@@ -441,6 +455,8 @@ export default {
     membershipInactive: 'Üyeliğiniz aktif değil. Lütfen üyeliğinizi yenilemek için yönetici ile iletişime geçin.',
     membershipNotStarted: 'Üyeliğiniz henüz başlamadı. Ders rezervasyonu yapmak için başlangıç tarihinizi bekleyin.',
     insufficientCredits: 'Yetersiz ders kredisi. Lütfen ders paketi satın alın.',
+    accountDeleted: 'Hesabınız silinmiş. Ders rezervasyonu yapamazsınız.',
+    packageExpiredForLesson: 'Paketinizin süresi bu ders tarihinden önce doluyor. Lütfen paketinizi yenileyin.',
   },
   
   // Class History

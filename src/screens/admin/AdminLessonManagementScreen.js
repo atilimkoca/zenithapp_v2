@@ -12,6 +12,7 @@ import {
   Modal,
   PanResponder,
   Animated,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -82,21 +83,17 @@ export default function AdminLessonManagementScreen({ navigation }) {
         }
       },
       onPanResponderRelease: (_, gestureState) => {
-        // If dragged down more than 100px, close the modal
-        if (gestureState.dy > 100) {
-          Animated.timing(panY, {
-            toValue: 500,
-            duration: 200,
-            useNativeDriver: false,
-          }).start(() => {
-            closeLessonDetails();
-            panY.setValue(0);
-          });
+        // If dragged down more than 100px or fast swipe
+        if (gestureState.dy > 100 || gestureState.vy > 1.5) {
+          closeLessonDetails();
         } else {
           // Otherwise, spring back to original position
           Animated.spring(panY, {
             toValue: 0,
-            useNativeDriver: false,
+            useNativeDriver: true,
+            damping: 20,
+            mass: 1.2,
+            stiffness: 100,
           }).start();
         }
       },
@@ -331,9 +328,22 @@ export default function AdminLessonManagementScreen({ navigation }) {
 
   const showLessonDetails = async (lesson) => {
     console.log('Opening lesson details:', lesson);
+    
+    // Start off-screen
+    panY.setValue(Dimensions.get('window').height);
+    
     setSelectedLesson(lesson);
     setShowDetailsModal(true);
     setParticipantDetails({});
+    
+    // Animate in
+    Animated.spring(panY, {
+      toValue: 0,
+      useNativeDriver: true,
+      damping: 20,
+      mass: 1.2,
+      stiffness: 100,
+    }).start();
     
     // Fetch participant details if lesson has participants
     const participantIds = lesson.participants || lesson.enrolledStudents || [];
@@ -394,11 +404,17 @@ export default function AdminLessonManagementScreen({ navigation }) {
   };
 
   const closeLessonDetails = () => {
-    setShowDetailsModal(false);
-    setSelectedLesson(null);
-    setParticipantDetails({});
-    setLoadingParticipants(false);
-    panY.setValue(0);
+    // Animate out
+    Animated.timing(panY, {
+      toValue: Dimensions.get('window').height,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      setShowDetailsModal(false);
+      setSelectedLesson(null);
+      setParticipantDetails({});
+      setLoadingParticipants(false);
+    });
   };
 
   // Helper to get the actual lesson start datetime by combining scheduledDate and startTime
@@ -437,24 +453,18 @@ export default function AdminLessonManagementScreen({ navigation }) {
         activeOpacity={0.95}
       >
         <LinearGradient
-          colors={[getStatusColor(lesson) + '08', 'transparent']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
+          colors={['#FFFFFF', '#FFFFFF']}
           style={styles.lessonCardGradient}
         >
-          {/* Status Indicator Strip */}
-          <View style={[styles.statusStrip, { backgroundColor: getStatusColor(lesson) }]} />
+          {/* Status Indicator Strip Removed for cleaner look */}
           
           <View style={styles.lessonCardContent}>
             {/* Header Section */}
             <View style={styles.lessonHeader}>
               <View style={styles.lessonIconWrapper}>
-                <LinearGradient
-                  colors={[colors.primary, colors.primaryDark]}
-                  style={styles.lessonIconGradient}
-                >
+                <View style={styles.lessonIconContainer}>
                   <Ionicons name="barbell" size={22} color={colors.white} />
-                </LinearGradient>
+                </View>
               </View>
               
               <View style={styles.lessonInfo}>
@@ -479,7 +489,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
             {/* Type Badge */}
             <View style={styles.lessonTypeContainer}>
               <View style={styles.lessonTypeBadge}>
-                <Ionicons name="fitness-outline" size={12} color={colors.primary} />
+                <Ionicons name="fitness-outline" size={12} color={colors.textSecondary} />
                 <Text style={styles.lessonType}>{lesson.type}</Text>
               </View>
               {lesson.lessonType && (
@@ -487,20 +497,25 @@ export default function AdminLessonManagementScreen({ navigation }) {
                   styles.lessonTypeBadge,
                   lesson.lessonType === 'one-on-one' && styles.lessonTypeBadgeOneOnOne
                 ]}>
+                  {lesson.lessonType === 'one-on-one' ? (
+                     <Ionicons name="person-outline" size={12} color="#8b5cf6" />
+                  ) : (
+                     <Ionicons name="people-outline" size={12} color={colors.textSecondary} />
+                  )}
                   <Text style={[
                     styles.lessonType,
                     lesson.lessonType === 'one-on-one' && styles.lessonTypeOneOnOne
                   ]}>
-                    {lesson.lessonType === 'one-on-one' ? '👤 Bire Bir' : '👥 Grup'}
+                    {lesson.lessonType === 'one-on-one' ? 'Bire Bir' : 'Grup'}
                   </Text>
                 </View>
               )}
             </View>
 
-            {/* Details Grid */}
+            {/* Details Grid - Clean Outlined Style */}
             <View style={styles.lessonDetailsGrid}>
               <View style={styles.detailGridItem}>
-                <Ionicons name="calendar" size={15} color={colors.primary} />
+                <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
                 <Text style={styles.detailValue}>
                   {new Date(lesson.scheduledDate).toLocaleDateString(language === 'tr' ? 'tr-TR' : 'en-US', {
                     day: 'numeric',
@@ -510,7 +525,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
               </View>
 
               <View style={styles.detailGridItem}>
-                <Ionicons name="time" size={15} color={colors.primary} />
+                <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
                 <Text style={styles.detailValue}>
                   {lesson.startTime || new Date(lesson.scheduledDate).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
                 </Text>
@@ -518,7 +533,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
 
               {lesson.duration && (
                 <View style={styles.detailGridItem}>
-                  <Ionicons name="hourglass" size={15} color={colors.primary} />
+                  <Ionicons name="hourglass-outline" size={14} color={colors.textSecondary} />
                   <Text style={styles.detailValue}>{lesson.duration}dk</Text>
                 </View>
               )}
@@ -528,7 +543,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
             <View style={styles.capacitySection}>
               <View style={styles.capacityHeader}>
                 <View style={styles.capacityLabelContainer}>
-                  <Ionicons name="people" size={16} color={colors.textPrimary} />
+                  <Ionicons name="people" size={14} color={colors.textPrimary} />
                   <Text style={styles.capacityLabel}>Katılımcılar</Text>
                 </View>
                 <Text style={styles.capacityCount}>
@@ -543,7 +558,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
                         ? [colors.error, colors.error] 
                         : capacityPercentage >= 80 
                           ? [colors.warning, colors.warning]
-                          : [colors.success, colors.primary]
+                          : [colors.primary, colors.primary]
                     }
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
@@ -656,7 +671,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
               <Ionicons 
                 name="person" 
                 size={16} 
-                color={showOnlyMyLessons ? colors.white : colors.primary} 
+                color={showOnlyMyLessons ? colors.primary : colors.textSecondary} 
               />
               <Text style={[
                 styles.filterButtonText,
@@ -677,7 +692,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
               <Ionicons 
                 name="people" 
                 size={16} 
-                color={!showOnlyMyLessons ? colors.white : colors.primary} 
+                color={!showOnlyMyLessons ? colors.primary : colors.textSecondary} 
               />
               <Text style={[
                 styles.filterButtonText,
@@ -697,8 +712,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
             }}
             activeOpacity={0.8}
           >
-            <Ionicons name="trash-outline" size={16} color={colors.white} />
-            <Text style={styles.bulkDeleteButtonText}>Ders Sil</Text>
+            <Ionicons name="trash-outline" size={20} color="#EF4444" />
           </TouchableOpacity>
         </View>
 
@@ -769,12 +783,9 @@ export default function AdminLessonManagementScreen({ navigation }) {
         onPress={() => navigation.navigate('CreateLesson')}
         activeOpacity={0.9}
       >
-        <LinearGradient
-          colors={[colors.success, colors.primary]}
-          style={styles.floatingButtonGradient}
-        >
+        <View style={styles.floatingButtonGradient}>
           <Ionicons name="add" size={28} color={colors.white} />
-        </LinearGradient>
+        </View>
       </TouchableOpacity>
 
       {/* Bulk Delete Modal */}
@@ -909,7 +920,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
   <Modal
         visible={showDetailsModal}
         transparent={true}
-        animationType="slide"
+        animationType="fade" // Changed to fade for manual slide control
         onRequestClose={closeLessonDetails}
       >
         <View style={styles.modalOverlay}>
@@ -930,18 +941,13 @@ export default function AdminLessonManagementScreen({ navigation }) {
               {selectedLesson ? (
                 <>
                   {/* Swipe Indicator and Header - Draggable Area */}
-                  <View {...panResponder.panHandlers}>
+                  <View {...panResponder.panHandlers} style={styles.modalDragArea}>
                     <View style={styles.swipeIndicatorContainer}>
                       <View style={styles.swipeIndicator} />
                     </View>
 
-                    {/* Gradient Header */}
-                    <LinearGradient
-                      colors={[colors.gradientStart, colors.primaryDark]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={styles.modalHeaderGradient}
-                    >
+                    {/* Header */}
+                    <View style={styles.modalHeaderContent}>
                       <View style={styles.headerTop}>
                         <View style={styles.iconCircle}>
                           <Ionicons name="fitness" size={26} color={colors.white} />
@@ -959,7 +965,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
                           {getStatusText(selectedLesson)}
                         </Text>
                       </View>
-                    </LinearGradient>
+                    </View>
                   </View>
 
                   <View style={styles.modalInner}>
@@ -1243,52 +1249,57 @@ const styles = StyleSheet.create({
 
   quickActionsRow: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
-    paddingHorizontal: 16,
-    marginBottom: 8,
-    gap: 10,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    gap: 12,
   },
   filterButtonsContainer: {
+    flex: 1,
     flexDirection: 'row',
-    borderRadius: 12,
-    overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: colors.primary,
+    backgroundColor: colors.lightGray,
+    padding: 4,
+    borderRadius: 14,
+    gap: 4,
   },
   filterButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
+    justifyContent: 'center',
     paddingVertical: 10,
-    backgroundColor: colors.white,
+    borderRadius: 10,
+    gap: 6,
   },
   filterButtonActive: {
-    backgroundColor: colors.primary,
+    backgroundColor: colors.white,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
   filterButtonText: {
     fontSize: 13,
-    fontWeight: '700',
-    marginLeft: 6,
-    color: colors.primary,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   filterButtonTextActive: {
-    color: colors.white,
+    color: colors.primary,
   },
   bulkDeleteButton: {
-    flexDirection: 'row',
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.error,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-    ...colors.shadow,
-    shadowOpacity: 0.12,
+    backgroundColor: '#FEE2E2',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FAC7C7',
   },
   bulkDeleteButtonText: {
-    color: colors.white,
-    fontSize: 14,
-    fontWeight: '700',
-    marginLeft: 8,
+    display: 'none', // Hide text for cleaner look, icon is enough
   },
 
   // Modern Lessons List
@@ -1445,13 +1456,15 @@ const styles = StyleSheet.create({
   lessonIconWrapper: {
     marginRight: 14,
   },
-  lessonIconGradient: {
+  lessonIconContainer: {
     width: 48,
     height: 48,
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    ...colors.shadow,
+    backgroundColor: '#6B7F6A', // Solid sage green, matching image
+    shadowColor: '#6B7F6A',
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
@@ -1504,23 +1517,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: colors.primary + '12',
+    backgroundColor: '#F3F4F6',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   lessonTypeBadgeOneOnOne: {
-    backgroundColor: '#8b5cf6' + '15',
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
   },
   lessonType: {
     fontSize: 12,
-    color: colors.primary,
+    color: colors.textSecondary,
     fontWeight: '600',
     marginLeft: 6,
   },
   lessonTypeOneOnOne: {
     color: '#8b5cf6',
-    marginLeft: 0,
   },
   lessonDetailsGrid: {
     flexDirection: 'row',
@@ -1532,12 +1547,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: colors.white,
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(107, 127, 106, 0.1)',
+    borderColor: 'rgba(107, 127, 106, 0.15)',
     gap: 6,
   },
   detailIconBox: {
@@ -1576,7 +1591,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   capacityLabelContainer: {
     flexDirection: 'row',
@@ -1589,23 +1604,24 @@ const styles = StyleSheet.create({
     marginLeft: 6,
   },
   capacityCount: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    color: colors.primary,
+    color: colors.textSecondary,
   },
   progressBarContainer: {
-    height: 8,
-    borderRadius: 4,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#F3F4F6', // Lighter background for the track
     overflow: 'hidden',
   },
   progressBarBackground: {
     flex: 1,
-    backgroundColor: colors.gray,
-    borderRadius: 4,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 3,
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 4,
+    borderRadius: 3,
   },
   lessonActions: {
     flexDirection: 'row',
@@ -1618,22 +1634,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 14,
+    borderRadius: 12,
     ...colors.shadow,
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   cancelButton: {
-    backgroundColor: colors.error,
+    backgroundColor: '#EF4444',
   },
   editButton: {
-    backgroundColor: colors.primary,
+    backgroundColor: '#6B7F6A',
   },
   actionButtonText: {
     color: colors.white,
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
     marginLeft: 6,
     letterSpacing: 0.2,
   },
@@ -1711,12 +1727,12 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: 'transparent',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
     width: '100%',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 20,
     elevation: 20,
     overflow: 'hidden',
@@ -1728,25 +1744,29 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   swipeIndicator: {
-    width: 45,
+    width: 48,
     height: 5,
     borderRadius: 3,
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.3)',
   },
-  modalHeaderGradient: {
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 24,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+  modalDragArea: {
+    backgroundColor: '#6B7F6A',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingBottom: 32,
+  },
+  modalHeaderContent: {
+    paddingHorizontal: 24,
+    paddingBottom: 16,
   },
   modalInner: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingTop: 12,
+    backgroundColor: '#F9FAFB',
+    paddingTop: 24,
     paddingBottom: 0,
     maxHeight: '85%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    marginTop: -20,
   },
   headerTop: {
     flexDirection: 'row',
@@ -1755,23 +1775,19 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   iconCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: colors.primary,
+    width: 40, // Reduced size
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'transparent', // Transparent background
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    // Removed shadows
   },
   closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1811,29 +1827,34 @@ const styles = StyleSheet.create({
   infoCards: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    paddingBottom: 20,
+    paddingBottom: 24,
     gap: 12,
   },
   infoCard: {
     flex: 1,
     backgroundColor: colors.white,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 20,
+    paddingVertical: 20,
+    paddingHorizontal: 12,
     alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 4,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    aspectRatio: 0.9,
   },
   infoCardIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: `${colors.primary}15`,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   infoCardLabel: {
     fontSize: 11,
@@ -1841,41 +1862,46 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    fontWeight: '600',
+    fontWeight: '700',
+    textAlign: 'center',
   },
   infoCardValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1F2937',
+    textAlign: 'center',
   },
 
   // Details Section
   detailsSection: {
     paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingBottom: 24,
+    gap: 12,
   },
   detailItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
     backgroundColor: colors.white,
-    borderRadius: 14,
-    marginBottom: 10,
+    borderRadius: 18,
+    marginBottom: 0,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
   },
   detailIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: `${colors.primary}10`,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
+    marginRight: 16,
   },
   detailTextContainer: {
     flex: 1,
@@ -1883,12 +1909,12 @@ const styles = StyleSheet.create({
   detailItemLabel: {
     fontSize: 12,
     color: colors.textSecondary,
-    marginBottom: 3,
-    fontWeight: '500',
+    marginBottom: 2,
+    fontWeight: '600',
   },
   detailItemValue: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textPrimary,
   },
 
@@ -1961,15 +1987,17 @@ const styles = StyleSheet.create({
   participantCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 14,
+    padding: 16,
     backgroundColor: colors.white,
-    borderRadius: 14,
+    borderRadius: 18,
     marginBottom: 10,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
     elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
   },
   participantAvatar: {
     width: 48,
@@ -2029,23 +2057,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   footerButton: {
-    minWidth: 140,
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    shadowColor: colors.primary,
+    backgroundColor: '#6B7F6A',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    shadowColor: '#6B7F6A',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 4,
   },
   footerButtonDanger: {
-    backgroundColor: colors.error,
-    shadowColor: colors.error,
+    backgroundColor: '#EF4444',
+    shadowColor: '#EF4444',
   },
   footerButtonIcon: {
     width: 32,
@@ -2063,6 +2091,7 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontSize: 15,
     fontWeight: '700',
+    letterSpacing: 0.3,
   },
   modalFooterInfo: {
     flexDirection: 'row',
@@ -2087,20 +2116,21 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 24,
     right: 24,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowColor: '#6B7F6A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
   },
   floatingButtonGradient: {
     width: '100%',
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#6B7F6A',
   },
 });

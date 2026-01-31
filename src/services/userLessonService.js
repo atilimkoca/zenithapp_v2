@@ -428,16 +428,20 @@ export const userLessonService = {
         updatedAt: new Date().toISOString()
       });
 
-      // Refund lesson credit
+      // Refund lesson credit to the appropriate package
       try {
-        const { lessonCreditsService } = await import('./lessonCreditsService');
-        const refundResult = await lessonCreditsService.refundUserCredit(
-          userId, 
+        const { adminService } = await import('./adminService');
+        const lessonScheduledDate = lessonData.scheduledDate || new Date().toISOString();
+        const refundResult = await adminService.refundLessonToPackage(
+          userId,
+          lessonScheduledDate,
           `Ders iptali: ${lessonData.title} - ${lessonData.scheduledDate}`
         );
-        
+
         if (!refundResult.success) {
-          console.warn('⚠️ Could not refund credit, but cancellation continues:', refundResult.message);
+          console.warn('⚠️ Could not refund credit to package, but cancellation continues:', refundResult.error);
+        } else {
+          console.log('✅ Lesson credit refunded to package:', refundResult.packageName);
         }
       } catch (creditError) {
         console.warn('⚠️ Credit refund failed:', creditError);

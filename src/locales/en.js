@@ -115,6 +115,7 @@
     accountPendingMessage: 'Your account is awaiting admin approval. You will have full access once approved.',
     accountRejectedMessage: 'Your account has been rejected. Please contact us for more information.',
     accountDeletedMessage: 'This account no longer exists. Please sign up again.',
+    accountCancelledMessage: 'Your membership has been cancelled. Please contact us for more information.',
 
     // Account Deletion
     deleteAccount: 'Delete Account',
@@ -140,6 +141,19 @@
     totalLessons: 'Total Lessons',
     thisMonth: 'This Month',
     packageEndDate: 'Package End Date',
+    myPackages: 'My Packages',
+    totalRemainingSessions: 'Total Remaining Sessions',
+    sessions: 'sessions',
+    package: 'Package',
+    packageActive: 'Active',
+    packageExpired: 'Expired',
+    packagePending: 'Pending',
+    packageUpcoming: 'Not Started',
+    packageDepleted: 'No Lessons Left',
+    startDate: 'Start',
+    endDate: 'End',
+    totalLessonsPackage: 'Total Lessons',
+    noPackages: 'No packages found',
     thisWeek: 'This Week',
     completionRate: 'Completion',
     updateProfile: 'Update your profile information',
@@ -190,6 +204,9 @@
     membershipInactive: 'Your membership is inactive. Please contact the administrator to renew your membership.',
     membershipNotStarted: 'Your membership has not started yet. Please wait until your start date to book classes.',
     insufficientCredits: 'Insufficient lesson credits. Please purchase a lesson package.',
+    accountDeleted: 'Your account has been deleted. You cannot book lessons.',
+    packageExpiredForLesson: 'Your package expires before this lesson date. Please renew your package.',
+    noPackageForDate: 'You don\'t have a valid package for this lesson date. Please purchase a package that covers this date.',
   },
   
   // Overview

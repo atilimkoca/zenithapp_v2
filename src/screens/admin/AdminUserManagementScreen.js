@@ -40,6 +40,11 @@ const UserListItem = ({ user, onPress }) => {
   const avatarSource = user?.photoURL || user?.avatar;
   const isPending = user?.status === 'pending';
   const isRejected = user?.status === 'rejected';
+  const isApproved = user?.status === 'approved';
+
+  // Get remaining sessions info
+  const remainingClasses = user?.remainingClasses ?? user?.lessonCredits ?? 0;
+  const totalClasses = user?.packageInfo?.lessonCount ?? remainingClasses;
 
   // Determine styling based on status
   const itemStyle = [
@@ -48,15 +53,9 @@ const UserListItem = ({ user, onPress }) => {
     isRejected && styles.userItemRejected
   ];
 
-  const borderLeftStyle = isPending
-    ? { borderLeftWidth: 4, borderLeftColor: '#FBBF24' }
-    : isRejected
-    ? { borderLeftWidth: 4, borderLeftColor: '#F87171' }
-    : {};
-
   return (
     <TouchableOpacity style={styles.userItemWrapper} onPress={onPress} activeOpacity={0.85}>
-      <View style={[...itemStyle, borderLeftStyle]}>
+      <View style={itemStyle}>
         <View style={styles.userAvatar}>
           {avatarSource ? (
             <Image source={{ uri: avatarSource }} style={styles.avatarImage} />
@@ -83,12 +82,22 @@ const UserListItem = ({ user, onPress }) => {
               </View>
             )}
           </View>
-        </View>
-
-        <View style={styles.arrowContainer}>
-          <View style={styles.arrowButton}>
-            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
-          </View>
+          {isApproved && (
+            <View style={{ marginTop: 6, width: '100%' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                 <Text style={{ fontSize: 12, fontWeight: '500', color: colors.textSecondary }}>Kalan Seanslar</Text>
+                 <Text style={{ fontSize: 12, fontWeight: '700', color: colors.primary }}>{remainingClasses}/{totalClasses}</Text>
+              </View>
+              <View style={{ height: 4, backgroundColor: 'rgba(107, 127, 106, 0.1)', borderRadius: 2, width: '100%', overflow: 'hidden' }}>
+                <View style={{ 
+                  width: `${Math.min(Math.max(remainingClasses / (totalClasses || 1), 0), 1) * 100}%`, 
+                  backgroundColor: colors.primary, 
+                  height: '100%', 
+                  borderRadius: 2 
+                }} />
+              </View>
+            </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -162,6 +171,10 @@ export default function AdminUserManagementScreen({ navigation }) {
     <UserListItem user={item} onPress={() => handleUserPress(item)} />
   );
 
+  const renderSeparator = () => (
+    <View style={styles.separator} />
+  );
+
   const searchPlaceholder = 'Üye ara...';
 
   // Count only non-deleted users
@@ -229,6 +242,7 @@ export default function AdminUserManagementScreen({ navigation }) {
             data={filteredUsers}
             keyExtractor={(item) => item.id}
             renderItem={renderUserItem}
+            ItemSeparatorComponent={renderSeparator}
             contentContainerStyle={styles.listContent}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             ListEmptyComponent={
@@ -317,23 +331,19 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 40,
   },
+  separator: {
+    height: 1,
+    backgroundColor: 'rgba(107, 127, 106, 0.12)',
+    marginHorizontal: 16,
+  },
   userItemWrapper: {
-    marginBottom: 14,
   },
   userItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(107, 127, 106, 0.12)',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     backgroundColor: colors.white,
-    shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
   },
   userAvatar: {
     width: 48,
@@ -376,6 +386,16 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     textTransform: 'capitalize',
   },
+  remainingSessions: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  remainingSessionsValue: {
+    fontWeight: '700',
+    color: '#F97316',
+  },
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -399,23 +419,11 @@ const styles = StyleSheet.create({
     color: '#DC2626',
   },
   userItemPending: {
-    backgroundColor: '#FFFBEB',
+    backgroundColor: colors.white,
   },
   userItemRejected: {
-    backgroundColor: '#FEF2F2',
+    backgroundColor: colors.white,
     opacity: 0.7,
-  },
-  arrowContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  arrowButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.lightGray,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   loadingContainer: {
     marginTop: 60,

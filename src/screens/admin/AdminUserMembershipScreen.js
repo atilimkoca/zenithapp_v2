@@ -76,6 +76,31 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const sheetTranslateY = useRef(new Animated.Value(0)).current;
 
+  // State for all user packages (multi-package support)
+  const [userPackages, setUserPackages] = useState([]);
+  const [loadingPackages, setLoadingPackages] = useState(true);
+
+  // Load all packages for this user
+  useEffect(() => {
+    const loadUserPackages = async () => {
+      if (!userId) return;
+
+      try {
+        setLoadingPackages(true);
+        const result = await adminService.getUserPackages(userId);
+        if (result.success) {
+          setUserPackages(result.packages);
+        }
+      } catch (error) {
+        console.error('Error loading user packages:', error);
+      } finally {
+        setLoadingPackages(false);
+      }
+    };
+
+    loadUserPackages();
+  }, [userId]);
+
   const hideRenewModal = (resetState = false) => {
     setShowRenewModal(false);
     setShowDatePicker(false);
@@ -123,13 +148,34 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
   // Treat frozen users as approved for renewal purposes
   const APPROVED_STATUSES = ['approved', 'frozen', 'active'];
   const isApproved = APPROVED_STATUSES.includes((userStatus || '').toLowerCase());
-  const hasPackage = isApproved &&
-    packageInfo &&
-    packageInfo.packageId &&
-    packageInfo.packageName &&
-    packageInfo.packageName !== 'Üyelik bulunamadı' &&
-    packageInfo.packageName !== 'Paket Atanmadı' &&
-    packageInfo.packageName !== 'Tanımsız Paket';
+
+  // Create effective packageInfo - fallback to root-level data if packageInfo is missing
+  const effectivePackageInfo = useMemo(() => {
+    // If packageInfo exists and is valid, use it
+    if (packageInfo && packageInfo.packageId && packageInfo.packageName &&
+        packageInfo.packageName !== 'Üyelik bulunamadı' &&
+        packageInfo.packageName !== 'Paket Atanmadı' &&
+        packageInfo.packageName !== 'Tanımsız Paket') {
+      return packageInfo;
+    }
+
+    // Fallback: create packageInfo from root-level fields if user has remaining classes
+    const credits = remainingClasses ?? lessonCredits ?? 0;
+    if (isApproved && credits > 0) {
+      return {
+        packageId: 'legacy_package',
+        packageName: 'Mevcut Paket',
+        packageType: 'group',
+        lessonCount: credits,
+        assignedAt: packageStartDate || null,
+        expiryDate: packageExpiryDate || null,
+      };
+    }
+
+    return null;
+  }, [packageInfo, remainingClasses, lessonCredits, packageStartDate, packageExpiryDate, isApproved]);
+
+  const hasPackage = isApproved && effectivePackageInfo !== null;
   const requiresApprovalFlow = !hasPackage;
   const primaryActionGradient = hasPackage
     ? [colors.primary, colors.primaryDark]
@@ -176,17 +222,21 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
           onPress: async () => {
             setRenewLoading(true);
             try {
-              let result;
-              if (isApproval) {
-                // Approve user with package
-                result = await adminService.approveUserWithPackage(userId, selectedPackage.id, startDate.toISOString());
-              } else {
-                // Renew package
-                result = await adminService.renewPackageWithStartDate(userId, selectedPackage.id, startDate.toISOString());
-              }
+              // Use addPackageToUser for both approval and renewal (multi-package support)
+              const result = await adminService.addPackageToUser(
+                userId,
+                {
+                  packageId: selectedPackage.id,
+                  startDate: startDate.toISOString()
+                },
+                'admin'
+              );
 
               if (result.success) {
-                Alert.alert('Başarılı', isApproval ? 'Üye başarıyla onaylandı' : 'Paket başarıyla yenilendi', [
+                const successMessage = isApproval
+                  ? 'Üye başarıyla onaylandı'
+                  : `Paket başarıyla eklendi. Toplam ${result.totalPackages} paket.`;
+                Alert.alert('Başarılı', successMessage, [
                   {
                     text: 'Tamam',
                     onPress: () => {
@@ -196,7 +246,7 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
                   },
                 ]);
               } else {
-                Alert.alert('Hata', result.error || (isApproval ? 'Üye onaylanamadı' : 'Paket yenilenemedi'));
+                Alert.alert('Hata', result.error || 'Paket eklenemedi');
               }
             } catch (error) {
               Alert.alert('Hata', 'Bir hata oluştu');
@@ -210,18 +260,19 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
   };
 
   const membershipData = useMemo(() => {
-    if (!packageInfo) {
+    // Use effectivePackageInfo which includes fallback logic
+    if (!effectivePackageInfo) {
       return null;
     }
 
-    const totalLessons = packageInfo.lessonCount || packageInfo.classes || 0;
-    const remaining = typeof remainingClasses === 'number' ? remainingClasses : (packageInfo.remainingClasses || 0);
+    const totalLessons = effectivePackageInfo.lessonCount || effectivePackageInfo.classes || 0;
+    const remaining = typeof remainingClasses === 'number' ? remainingClasses : (effectivePackageInfo.remainingClasses || 0);
     const used = Math.max(totalLessons - remaining, 0);
 
-    // Use root-level packageExpiryDate as primary source, fall back to packageInfo
+    // Use root-level packageExpiryDate as primary source, fall back to effectivePackageInfo
     // This ensures consistency with freeze/unfreeze operations
-    const assignedDate = packageStartDate || packageInfo.assignedAt || packageInfo.packageStartDate;
-    const expiryDate = packageExpiryDate || packageInfo.expiryDate;
+    const assignedDate = packageStartDate || effectivePackageInfo.assignedAt || effectivePackageInfo.packageStartDate;
+    const expiryDate = packageExpiryDate || effectivePackageInfo.expiryDate;
 
     let totalDays = 0;
     let remainingDays = 0;
@@ -233,27 +284,27 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
       remainingDays = Math.max(0, Math.ceil((end - today) / (1000 * 60 * 60 * 24)));
     }
 
-    const singularType = packageInfo.packageType || null;
+    const singularType = effectivePackageInfo.packageType || null;
     const normalizedType = singularType
       ? singularType.toString().trim().toLowerCase()
       : null;
     const showPackageType = normalizedType && normalizedType !== 'one-on-one';
 
     return {
-      packageName: packageInfo.packageName || 'Tanımsız Paket',
-      packageType: showPackageType ? packageInfo.packageType : null,
-      startDate: formatDate(assignedDate || packageInfo.startDate),
-      endDate: formatDate(expiryDate || packageInfo.endDate),
+      packageName: effectivePackageInfo.packageName || 'Tanımsız Paket',
+      packageType: showPackageType ? effectivePackageInfo.packageType : null,
+      startDate: formatDate(assignedDate || effectivePackageInfo.startDate),
+      endDate: formatDate(expiryDate || effectivePackageInfo.endDate),
       totalLessons,
       remainingLessons: remaining,
       usedLessons: used,
       totalDays,
       remainingDays,
-      price: packageInfo.price || packageInfo.amount || null,
-      paymentType: packageInfo.paymentType || '—',
+      price: effectivePackageInfo.price || effectivePackageInfo.amount || null,
+      paymentType: effectivePackageInfo.paymentType || '—',
       lessonCredits: typeof lessonCredits === 'number' ? lessonCredits : remaining,
     };
-  }, [packageInfo, remainingClasses, lessonCredits, packageExpiryDate, packageStartDate]);
+  }, [effectivePackageInfo, remainingClasses, lessonCredits, packageExpiryDate, packageStartDate]);
 
   return (
     <View style={styles.container}>
@@ -298,7 +349,7 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
                 <View style={styles.metricsRow}>
                   <View style={styles.metricItem}>
                     <Text style={styles.metricLabel}>Kalan Ders</Text>
-                    <Text style={[styles.metricValue, { color: '#6366F1' }]}>
+                    <Text style={[styles.metricValue, { color: colors.primary }]}>
                       {membershipData.remainingLessons}
                     </Text>
                   </View>
@@ -317,6 +368,13 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
                 </View>
 
                 <View style={styles.divider} />
+
+                <ProgressBar
+                  label="Kalan Ders"
+                  value={membershipData.remainingLessons}
+                  total={membershipData.totalLessons}
+                  color={colors.primary}
+                />
 
                 <ProgressBar
                   label="Ders Kullanımı"
@@ -372,6 +430,75 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
               ) : null}
             </View>
           </>
+        )}
+
+        {/* All Packages Section */}
+        {userPackages.length > 0 && (
+          <View style={styles.allPackagesSection}>
+            <Text style={styles.sectionTitle}>Tüm Paketler ({userPackages.length})</Text>
+            {userPackages.map((pkg, index) => {
+              const isActive = pkg.status === 'active';
+              const isExpired = pkg.status === 'expired';
+              const isUpcoming = pkg.status === 'upcoming';
+              const isDepleted = pkg.status === 'depleted';
+
+              const statusColor = isActive ? '#10B981' : isExpired ? '#EF4444' : isUpcoming ? '#3B82F6' : '#F59E0B';
+              const statusText = isActive ? 'Aktif' : isExpired ? 'Süresi Doldu' : isUpcoming ? 'Yaklaşan' : 'Tükendi';
+
+              return (
+                <View key={pkg.id || index} style={[styles.packageCard, isExpired && styles.packageCardExpired]}>
+                  <View style={styles.packageCardHeader}>
+                    <View style={styles.packageCardTitleRow}>
+                      <Text style={styles.packageCardName}>{pkg.packageName}</Text>
+                      <View style={[styles.statusBadge, { backgroundColor: statusColor + '20' }]}>
+                        <Text style={[styles.statusBadgeText, { color: statusColor }]}>{statusText}</Text>
+                      </View>
+                    </View>
+                    {pkg.packageType && (
+                      <Text style={styles.packageCardType}>{pkg.packageType}</Text>
+                    )}
+                  </View>
+
+                  <View style={styles.packageCardDates}>
+                    <View style={styles.packageCardDateItem}>
+                      <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+                      <Text style={styles.packageCardDateText}>
+                        {formatDate(pkg.startDate, language)} - {formatDate(pkg.expiryDate, language)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.packageCardStats}>
+                    <View style={styles.packageCardStat}>
+                      <Text style={styles.packageCardStatLabel}>Kalan</Text>
+                      <Text style={[styles.packageCardStatValue, { color: colors.primary }]}>
+                        {pkg.remainingLessons}
+                      </Text>
+                    </View>
+                    <View style={styles.packageCardStat}>
+                      <Text style={styles.packageCardStatLabel}>Kullanılan</Text>
+                      <Text style={[styles.packageCardStatValue, { color: '#F59E0B' }]}>
+                        {(pkg.totalLessons || 0) - (pkg.remainingLessons || 0)}
+                      </Text>
+                    </View>
+                    <View style={styles.packageCardStat}>
+                      <Text style={styles.packageCardStatLabel}>Toplam</Text>
+                      <Text style={[styles.packageCardStatValue, { color: '#10B981' }]}>
+                        {pkg.totalLessons}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {loadingPackages && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={styles.loadingText}>Paketler yükleniyor...</Text>
+          </View>
         )}
 
         {userId && (
@@ -921,5 +1048,106 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: colors.white,
+  },
+
+  // All Packages Section Styles
+  allPackagesSection: {
+    marginTop: 24,
+    marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+  packageCard: {
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  packageCardExpired: {
+    opacity: 0.7,
+    backgroundColor: '#F9FAFB',
+  },
+  packageCardHeader: {
+    marginBottom: 12,
+  },
+  packageCardTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  packageCardName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  packageCardType: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  packageCardDates: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  packageCardDateItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  packageCardDateText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  packageCardStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  packageCardStat: {
+    alignItems: 'center',
+  },
+  packageCardStatLabel: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  packageCardStatValue: {
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    gap: 8,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.textSecondary,
   },
 });

@@ -15,7 +15,6 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors } from '../../constants/colors';
 import { useAuth } from '../../context/AuthContext';
@@ -476,12 +475,9 @@ export default function AdminCreateLessonScreen({ navigation }) {
         {/* Section Header */}
         <View style={styles.sectionHeader}>
           <View style={styles.sectionIconContainer}>
-            <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
-              style={styles.sectionIconGradient}
-            >
+            <View style={styles.sectionIconGradient}>
               <Ionicons name="information-circle" size={20} color={colors.white} />
-            </LinearGradient>
+            </View>
           </View>
           <View style={styles.sectionHeaderText}>
             <Text style={styles.sectionTitle}>Temel Bilgiler</Text>
@@ -525,16 +521,11 @@ export default function AdminCreateLessonScreen({ navigation }) {
                     activeOpacity={0.7}
                   >
                     {isActive ? (
-                      <LinearGradient
-                        colors={[colors.primary, colors.primaryDark]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.chipGradient}
-                      >
+                      <View style={styles.chipGradient}>
                         <Text style={[styles.typeChipText, styles.typeChipTextActive]}>
                           {lessonTypeItem}
                         </Text>
-                      </LinearGradient>
+                      </View>
                     ) : (
                       <Text style={styles.typeChipText}>{lessonTypeItem}</Text>
                     )}
@@ -556,20 +547,9 @@ export default function AdminCreateLessonScreen({ navigation }) {
               onPress={() => handleLessonTypeChange('group')}
               activeOpacity={0.7}
             >
-              {lessonType === 'group' ? (
-                <LinearGradient
-                  colors={[colors.primary, colors.primaryDark]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.chipGradient}
-                >
-                  <Text style={[styles.lessonTypeChipText, styles.lessonTypeChipTextActive]}>
-                    👥 Grup Dersi
-                  </Text>
-                </LinearGradient>
-              ) : (
-                <Text style={styles.lessonTypeChipText}>👥 Grup Dersi</Text>
-              )}
+              <Text style={[styles.lessonTypeChipText, lessonType === 'group' && styles.lessonTypeChipTextActive]}>
+                👥 Grup Dersi
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
@@ -577,20 +557,9 @@ export default function AdminCreateLessonScreen({ navigation }) {
               onPress={() => handleLessonTypeChange('one-on-one')}
               activeOpacity={0.7}
             >
-              {lessonType === 'one-on-one' ? (
-                <LinearGradient
-                  colors={[colors.primary, colors.primaryDark]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.chipGradient}
-                >
-                  <Text style={[styles.lessonTypeChipText, styles.lessonTypeChipTextActive]}>
-                    👤 Bire Bir Ders
-                  </Text>
-                </LinearGradient>
-              ) : (
-                <Text style={styles.lessonTypeChipText}>👤 Bire Bir Ders</Text>
-              )}
+              <Text style={[styles.lessonTypeChipText, lessonType === 'one-on-one' && styles.lessonTypeChipTextActive]}>
+                👤 Bire Bir Ders
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -612,19 +581,14 @@ export default function AdminCreateLessonScreen({ navigation }) {
                     activeOpacity={0.7}
                   >
                     {isActive ? (
-                      <LinearGradient
-                        colors={[colors.primary, colors.primaryDark]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.chipGradient}
-                      >
+                      <View style={styles.chipGradient}>
                         <View style={styles.trainerAvatar}>
                           <Ionicons name="person" size={16} color={colors.primary} />
                         </View>
                         <Text style={[styles.trainerChipText, styles.trainerChipTextActive]}>
                           {trainer.name}
                         </Text>
-                      </LinearGradient>
+                      </View>
                     ) : (
                       <>
                         <Ionicons name="person-circle-outline" size={20} color={colors.textSecondary} />
@@ -664,12 +628,9 @@ export default function AdminCreateLessonScreen({ navigation }) {
         {/* Section Header */}
         <View style={styles.sectionHeader}>
           <View style={styles.sectionIconContainer}>
-            <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
-              style={styles.sectionIconGradient}
-            >
+            <View style={styles.sectionIconGradient}>
               <Ionicons name="settings-outline" size={20} color={colors.white} />
-            </LinearGradient>
+            </View>
           </View>
           <View style={styles.sectionHeaderText}>
             <Text style={styles.sectionTitle}>Ders Ayarları</Text>
@@ -724,12 +685,9 @@ export default function AdminCreateLessonScreen({ navigation }) {
         {/* Section Header */}
         <View style={styles.sectionHeader}>
           <View style={styles.sectionIconContainer}>
-            <LinearGradient
-              colors={[colors.primary, colors.primaryDark]}
-              style={styles.sectionIconGradient}
-            >
+            <View style={styles.sectionIconGradient}>
               <Ionicons name="calendar-outline" size={20} color={colors.white} />
-            </LinearGradient>
+            </View>
           </View>
           <View style={styles.sectionHeaderText}>
             <Text style={styles.sectionTitle}>Tarih ve Zaman</Text>
@@ -758,17 +716,12 @@ export default function AdminCreateLessonScreen({ navigation }) {
                     activeOpacity={0.7}
                   >
                     {isActive ? (
-                      <LinearGradient
-                        colors={[colors.primary, colors.primaryDark]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.chipGradient}
-                      >
+                      <View style={styles.chipGradient}>
                         <Ionicons name="checkmark-circle" size={16} color={colors.white} style={{ marginRight: 6 }} />
                         <Text style={[styles.dayChipText, styles.dayChipTextActive]}>
                           {dayLabel}
                         </Text>
-                      </LinearGradient>
+                      </View>
                     ) : (
                       <Text style={styles.dayChipText}>{dayLabel}</Text>
                     )}
@@ -875,12 +828,7 @@ export default function AdminCreateLessonScreen({ navigation }) {
           disabled={loading}
           activeOpacity={0.9}
         >
-          <LinearGradient
-            colors={loading ? [colors.textSecondary, colors.textSecondary] : [colors.success, colors.primary]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.createButtonGradient}
-          >
+          <View style={[styles.createButtonGradient, loading && { backgroundColor: colors.textSecondary }]}>
             {loading ? (
               <ActivityIndicator size="small" color={colors.white} />
             ) : (
@@ -891,7 +839,7 @@ export default function AdminCreateLessonScreen({ navigation }) {
                 <Text style={styles.createButtonText}>Ders Oluştur</Text>
               </>
             )}
-          </LinearGradient>
+          </View>
         </TouchableOpacity>
 
         <View style={{ height: 60 }} />
@@ -1007,12 +955,12 @@ export default function AdminCreateLessonScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#F9FAFB',
   },
   content: {
     flex: 1,
-    paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingHorizontal: 24,
+    paddingTop: 32,
   },
   loadingContainer: {
     flex: 1,
@@ -1034,7 +982,22 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   sectionIconContainer: {
-    marginRight: 14,
+    marginRight: 16,
+  },
+  sectionIconGradient: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...colors.shadow,
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
   sectionIconGradient: {
     width: 44,
@@ -1042,17 +1005,14 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
-    ...colors.shadow,
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 4,
+    backgroundColor: '#6B7F6A',
   },
   sectionHeaderText: {
     flex: 1,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
     color: colors.textPrimary,
     letterSpacing: -0.5,
     marginBottom: 2,
@@ -1067,7 +1027,7 @@ const styles = StyleSheet.create({
   // Divider
   divider: {
     height: 1,
-    backgroundColor: 'rgba(107, 127, 106, 0.12)',
+    backgroundColor: '#F3F4F6',
     marginVertical: 28,
   },
   
@@ -1077,17 +1037,27 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: 12,
+    fontWeight: '600',
+    color: '#334155',
+    marginBottom: 10,
+    marginLeft: 4,
     letterSpacing: -0.2,
   },
   required: {
-    color: colors.error,
-    fontWeight: '800',
+    color: '#EF4444',
+    fontWeight: '700',
   },
   inputWrapper: {
     position: 'relative',
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...colors.shadow,
+    shadowColor: '#64748B',
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
   },
   inputIconContainer: {
     position: 'absolute',
@@ -1099,26 +1069,20 @@ const styles = StyleSheet.create({
     top: 18,
   },
   input: {
-    backgroundColor: colors.white,
+    backgroundColor: 'transparent',
     borderRadius: 16,
-    paddingLeft: 52,
-    paddingRight: 18,
+    paddingLeft: 48,
+    paddingRight: 16,
     paddingVertical: 18,
     fontSize: 15,
     color: colors.textPrimary,
-    borderWidth: 2,
-    borderColor: 'rgba(107, 127, 106, 0.1)',
     fontWeight: '500',
-    ...colors.shadow,
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
   },
   textArea: {
-    minHeight: 130,
+    minHeight: 120,
     paddingTop: 18,
     textAlignVertical: 'top',
-    lineHeight: 22,
+    lineHeight: 24,
   },
   
   // Row Layout
@@ -1133,45 +1097,41 @@ const styles = StyleSheet.create({
   
   // Modern Chip Styles
   chipScrollView: {
-    marginHorizontal: -20,
-    paddingHorizontal: 20,
+    marginHorizontal: -24,
+    paddingHorizontal: 24,
   },
   chipContainer: {
     flexDirection: 'row',
     paddingVertical: 4,
-    gap: 10,
+    gap: 8,
   },
   chipGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 100,
+    backgroundColor: '#6B7F6A',
   },
   
   // Type Chips
   typeChip: {
-    backgroundColor: colors.white,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(107, 127, 106, 0.15)',
+    backgroundColor: '#F1F5F9', // Light gray background for inactive
+    borderRadius: 100, // Pill shape
+    borderWidth: 0, // No border
     overflow: 'hidden',
-    ...colors.shadow,
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
+    // No shadow for cleaner look
   },
   typeChipActive: {
-    borderColor: 'transparent',
-    transform: [{ scale: 1.03 }],
+    backgroundColor: '#6B7F6A',
   },
   typeChipText: {
     fontSize: 14,
-    color: colors.textPrimary,
+    color: '#475569', // Dark gray text
     fontWeight: '600',
-    letterSpacing: 0.2,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    letterSpacing: 0,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
   },
   typeChipTextActive: {
     color: colors.white,
@@ -1182,74 +1142,60 @@ const styles = StyleSheet.create({
   lessonTypeChip: {
     flex: 1,
     backgroundColor: colors.white,
-    borderRadius: 20,
-    borderWidth: 2.5,
-    borderColor: 'rgba(107, 127, 106, 0.2)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     overflow: 'hidden',
     marginHorizontal: 6,
-    ...colors.shadow,
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
-    minHeight: 64,
+    minHeight: 56,
     justifyContent: 'center',
   },
   lessonTypeChipActive: {
-    borderColor: colors.primary,
-    borderWidth: 3,
-    transform: [{ scale: 1.03 }],
-    ...colors.shadow,
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    shadowColor: colors.primary,
-    elevation: 8,
+    borderColor: '#6B7F6A',
+    backgroundColor: '#F7FCF7', // Very Subtle Green
+    borderWidth: 2,
   },
   lessonTypeChipText: {
     fontSize: 15,
-    color: colors.textSecondary,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    color: '#64748B',
+    fontWeight: '600',
+    letterSpacing: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 20,
   },
   lessonTypeChipTextActive: {
-    color: colors.white,
-    fontWeight: '800',
-    fontSize: 16,
-    letterSpacing: 0.5,
+    color: '#166534', // Dark green text
+    fontWeight: '700',
+    fontSize: 15,
   },
   
   // Day Chips
   dayChip: {
     backgroundColor: colors.white,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(107, 127, 106, 0.15)',
-    minWidth: 76,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    minWidth: 48,
+    height: 48,
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'hidden',
-    ...colors.shadow,
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
+    marginRight: 8,
   },
   dayChipActive: {
-    borderColor: 'transparent',
-    transform: [{ scale: 1.05 }],
+    borderColor: '#6B7F6A',
+    backgroundColor: '#6B7F6A',
   },
   dayChipText: {
     fontSize: 14,
-    color: colors.textPrimary,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    color: '#64748B',
+    fontWeight: '600',
+    letterSpacing: 0,
   },
   dayChipTextActive: {
     color: colors.white,
+    fontWeight: '700',
   },
   selectedDaysInfo: {
     flexDirection: 'row',
@@ -1257,59 +1203,59 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: `${colors.primary}10`,
+    backgroundColor: '#F0FDF4',
     borderRadius: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: colors.primary,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
   },
   selectedDaysText: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.primary,
+    color: '#166534',
     marginLeft: 8,
     flex: 1,
   },
   
   // Trainer Chips
   trainerChip: {
-    backgroundColor: colors.white,
+    backgroundColor: '#F1F5F9',
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(107, 127, 106, 0.15)',
-    overflow: 'hidden',
-    ...colors.shadow,
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
+    borderRadius: 100,
+    borderWidth: 0,
+    paddingLeft: 4,
+    paddingRight: 16,
+    paddingVertical: 4,
   },
   trainerChipActive: {
-    borderColor: 'transparent',
-    transform: [{ scale: 1.03 }],
+    backgroundColor: '#6B7F6A',
   },
   trainerChipText: {
     fontSize: 14,
-    color: colors.textPrimary,
+    color: '#475569',
     fontWeight: '600',
-    marginLeft: 10,
-    letterSpacing: 0.2,
-    paddingRight: 18,
-    paddingVertical: 12,
+    marginLeft: 8,
+    letterSpacing: 0,
+    paddingRight: 4,
+    paddingVertical: 8,
   },
   trainerChipTextActive: {
     color: colors.white,
     fontWeight: '700',
-    marginLeft: 8,
   },
   trainerAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.3)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,1)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 2,
+    ...colors.shadow,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
   
   // Modern Date Button
@@ -1320,18 +1266,19 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     paddingVertical: 18,
     paddingHorizontal: 18,
-    borderWidth: 2,
-    borderColor: 'rgba(107, 127, 106, 0.1)',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     ...colors.shadow,
+    shadowColor: '#64748B',
     shadowOpacity: 0.04,
-    shadowRadius: 12,
-    elevation: 2,
+    shadowRadius: 8,
+    elevation: 1,
   },
   dateIconContainer: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: `${colors.primary}12`,
+    backgroundColor: '#F1F5F9', // Light slate
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
@@ -1339,7 +1286,7 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 15,
     color: colors.textPrimary,
-    fontWeight: '700',
+    fontWeight: '600',
     letterSpacing: -0.2,
     flex: 1,
   },
@@ -1349,12 +1296,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: 18,
     padding: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(107, 127, 106, 0.1)',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     ...colors.shadow,
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   copyWeeksHeader: {
     flexDirection: 'row',
@@ -1365,7 +1313,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 14,
-    backgroundColor: `${colors.primary}15`,
+    backgroundColor: '#F3F4F6',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
@@ -1389,12 +1337,12 @@ const styles = StyleSheet.create({
   copyInputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(107, 127, 106, 0.15)',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 14,
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: `${colors.primary}05`,
+    backgroundColor: '#F9FAFB',
   },
   copyInput: {
     flex: 1,
@@ -1407,45 +1355,47 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     fontSize: 15,
     fontWeight: '800',
-    color: colors.primary,
+    color: '#6B7F6A',
     letterSpacing: 0.5,
   },
   
   // Modern Create Button
   createButton: {
-    marginTop: 16,
-    marginBottom: 12,
-    borderRadius: 20,
+    marginTop: 24,
+    marginBottom: 40,
+    borderRadius: 100,
     overflow: 'hidden',
     ...colors.shadow,
-    shadowColor: colors.success,
-    shadowOpacity: 0.3,
+    shadowColor: '#6B7F6A',
+    shadowOpacity: 0.4,
     shadowRadius: 16,
     elevation: 8,
   },
   createButtonDisabled: {
     opacity: 0.6,
+    shadowOpacity: 0,
   },
   createButtonGradient: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 20,
+    paddingVertical: 18,
     paddingHorizontal: 24,
+    backgroundColor: '#6B7F6A',
   },
   createButtonIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.25)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
   createButtonText: {
     color: colors.white,
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 17,
+    fontWeight: '700',
     letterSpacing: 0.5,
   },
   
