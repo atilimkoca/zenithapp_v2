@@ -425,6 +425,13 @@ export default function ClassSelectionScreen() {
       return;
     }
 
+    // Wait for userData to be loaded before filtering
+    // This prevents showing lessons before we can verify package dates
+    if (!userData) {
+      setFilteredLessons([]);
+      return;
+    }
+
     let filtered = [...currentDayLessons];
 
     // Filter out past lessons - users should only see upcoming lessons
@@ -494,13 +501,19 @@ export default function ClassSelectionScreen() {
     let packageDateRanges = [];
 
     if (userPackages.length > 0) {
-      // Use multi-package system
+      // Use multi-package system - filter valid packages and create date ranges
       packageDateRanges = userPackages
         .filter(pkg => pkg.status !== 'cancelled' && pkg.remainingLessons > 0)
-        .map(pkg => ({
-          start: new Date(pkg.startDate),
-          end: new Date(pkg.expiryDate)
-        }));
+        .map(pkg => {
+          const start = new Date(pkg.startDate);
+          const end = new Date(pkg.expiryDate);
+          return { start, end, name: pkg.packageName };
+        })
+        .filter(range => !isNaN(range.start.getTime()) && !isNaN(range.end.getTime())); // Filter out invalid dates
+
+      console.log('📦 Valid package date ranges:', packageDateRanges.map(r =>
+        `${r.name}: ${r.start.toISOString().split('T')[0]} - ${r.end.toISOString().split('T')[0]}`
+      ));
     } else {
       // Fall back to legacy single package
       const packageExpiryDate = userData?.packageExpiryDate || userData?.packageInfo?.expiryDate;
@@ -515,7 +528,12 @@ export default function ClassSelectionScreen() {
     }
 
     // Filter lessons to only show those within any package date range
-    if (packageDateRanges.length > 0) {
+    // IMPORTANT: If no valid package date ranges exist, show NO lessons (user can't book)
+    if (packageDateRanges.length === 0) {
+      console.log('📅 No valid package date ranges found - hiding all lessons');
+      filtered = [];
+    } else {
+      const beforeCount = filtered.length;
       filtered = filtered.filter(lesson => {
         let lessonDate;
         const dateVal = lesson.scheduledDate;
@@ -525,19 +543,28 @@ export default function ClassSelectionScreen() {
         } else {
           lessonDate = new Date(dateVal);
         }
+
+        // Skip invalid dates
+        if (isNaN(lessonDate.getTime())) {
+          console.warn(`⚠️ Invalid lesson date: ${dateVal}`);
+          return false;
+        }
+
         lessonDate.setHours(12, 0, 0, 0); // Normalize to noon
 
         // Check if lesson falls within ANY package date range
-        return packageDateRanges.some(range => {
+        const isWithinRange = packageDateRanges.some(range => {
           const startDate = new Date(range.start);
           startDate.setHours(0, 0, 0, 0);
           const endDate = new Date(range.end);
           endDate.setHours(23, 59, 59, 999);
           return lessonDate >= startDate && lessonDate <= endDate;
         });
+
+        return isWithinRange;
       });
 
-      console.log(`📅 Filtered by ${packageDateRanges.length} package date range(s): ${filtered.length} lessons remaining`);
+      console.log(`📅 Package date filter: ${beforeCount} → ${filtered.length} lessons (${packageDateRanges.length} ranges)`);
     }
 
     // Filter by search query
@@ -551,7 +578,7 @@ export default function ClassSelectionScreen() {
     }
 
     setFilteredLessons(filtered);
-  }, [currentDayLessons, userData?.packageInfo?.packageType, userData?.packages, userData?.packageExpiryDate, userData?.packageInfo?.expiryDate, userData?.packageStartDate, userData?.packageInfo?.assignedAt, debouncedSearchQuery]);
+  }, [currentDayLessons, userData, userData?.packageInfo?.packageType, userData?.packages, userData?.packageExpiryDate, userData?.packageInfo?.expiryDate, userData?.packageStartDate, userData?.packageInfo?.assignedAt, debouncedSearchQuery]);
 
   // Use availableDates directly instead of computing from lessons
   const availableDateKeys = useMemo(() => availableDates, [availableDates]);

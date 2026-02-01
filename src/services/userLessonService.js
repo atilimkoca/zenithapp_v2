@@ -466,7 +466,11 @@ export const userLessonService = {
         if (lessonData.scheduledDate) {
           const lessonDate = parseDateValue(lessonData.scheduledDate);
           if (lessonDate) {
-            const dateKey = lessonDate.toISOString().split('T')[0];
+            // Use local date format to match cache keys (avoid UTC timezone issues)
+            const year = lessonDate.getFullYear();
+            const month = String(lessonDate.getMonth() + 1).padStart(2, '0');
+            const day = String(lessonDate.getDate()).padStart(2, '0');
+            const dateKey = `${year}-${month}-${day}`;
             lessonService.invalidateDateCache(dateKey);
           }
         }

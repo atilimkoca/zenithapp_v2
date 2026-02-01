@@ -866,7 +866,8 @@ export const adminService = {
         : new Date();
       const durationMonths = packageDetails.duration || 1;
       const expiryDate = new Date(startDate);
-      expiryDate.setMonth(expiryDate.getMonth() + durationMonths);
+      // Use 30 days per month for consistent expiry calculation across all platforms
+      expiryDate.setDate(expiryDate.getDate() + (durationMonths * 30));
 
       // Create new package entry
       const newPackage = {

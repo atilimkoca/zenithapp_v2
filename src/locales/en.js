@@ -167,6 +167,7 @@
     enterLastName: 'Enter your last name',
     enterEmail: 'Enter your email address',
     enterPhone: 'Enter your phone number',
+    settings: 'Settings',
   },
   
   // Classes

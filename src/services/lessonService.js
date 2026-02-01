@@ -590,8 +590,19 @@ const fetchLessonsForSingleDate = async (dateString, forceRefresh = false) => {
           where('scheduledDate', '==', dateString)
         )
       );
-      usedDirectQuery = true;
-      console.log(`⚡ Direct date query: ${lessonsSnapshot.size} lessons for ${dateString}`);
+
+      // If direct query returns results, use them
+      if (lessonsSnapshot.size > 0) {
+        usedDirectQuery = true;
+        console.log(`⚡ Direct date query: ${lessonsSnapshot.size} lessons for ${dateString}`);
+      } else {
+        // Direct query returned 0 results - might be date format mismatch (ISO vs YYYY-MM-DD)
+        // Fall back to fetching all and filtering client-side
+        console.log(`⚠️ Direct date query returned 0 results for ${dateString}, using client-side filter`);
+        lessonsSnapshot = await getDocs(
+          query(collection(db, 'lessons'), where('status', '==', 'active'))
+        );
+      }
     } catch (queryError) {
       // Fallback if composite index doesn't exist or scheduledDate format is different
       console.warn('⚠️ Direct date query failed, using client-side filter');

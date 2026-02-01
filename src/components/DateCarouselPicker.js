@@ -41,6 +41,7 @@ const buildItems = (dates, locale) => {
         value: key,
         dayLabel: typeof key === 'string' ? key.toUpperCase().slice(0, 6) : 'DATE',
         dateNumber: '',
+        monthLabel: '',
         isWeekend: false,
       };
     }
@@ -49,11 +50,16 @@ const buildItems = (dates, locale) => {
       .toLocaleDateString(resolvedLocale, { weekday: 'short' })
       .toUpperCase();
 
+    const monthLabel = dateInstance
+      .toLocaleDateString(resolvedLocale, { month: 'short' })
+      .toUpperCase();
+
     return {
       key,
       value: key,
       dayLabel,
       dateNumber: padNumber(dateInstance.getDate()),
+      monthLabel,
       isWeekend: [0, 6].includes(dateInstance.getDay()),
     };
   }).filter(Boolean);
@@ -156,9 +162,14 @@ export default function DateCarouselPicker({
                   {item.dayLabel}
                 </Text>
                 {!item.isAll && (
-                  <Text style={[styles.dateText, { color: dateColor }]}>
-                    {item.dateNumber}
-                  </Text>
+                  <>
+                    <Text style={[styles.dateText, { color: dateColor }]}>
+                      {item.dateNumber}
+                    </Text>
+                    <Text style={[styles.monthText, { color: dayColor }]}>
+                      {item.monthLabel}
+                    </Text>
+                  </>
                 )}
               </LinearGradient>
             </TouchableOpacity>
@@ -175,7 +186,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 8,
     marginBottom: 16,
-    minHeight: 70,
+    minHeight: 86,
     ...colors.shadow,
   },
   containerLight: {
@@ -194,7 +205,7 @@ const styles = StyleSheet.create({
   },
   pill: {
     borderRadius: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     minWidth: 72,
     justifyContent: 'center',
@@ -224,5 +235,12 @@ const styles = StyleSheet.create({
   dateText: {
     fontSize: 18,
     fontWeight: '700',
+  },
+  monthText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    marginTop: 3,
+    opacity: 0.9,
   },
 });

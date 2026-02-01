@@ -986,7 +986,7 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.modernLogoutText}>{t('auth.logoutButton')}</Text>
           </TouchableOpacity>
           
-          <Text style={styles.versionText}>Version 2.0.0 • Zenith App</Text>
+          <Text style={styles.versionText}>Version 1.0.4 • Zenith Studio</Text>
         </View>
       </ScrollView>
 
