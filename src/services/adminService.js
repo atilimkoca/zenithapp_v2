@@ -1198,6 +1198,41 @@ export const adminService = {
    */
   deductLessonFromPackage: async (userId, lessonDate, lessonInfo = '') => {
     try {
+      // First, get the user data directly to check for legacy structure
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        return { success: false, error: 'Kullanıcı bulunamadı' };
+      }
+
+      const userData = userDoc.data();
+      
+      // Check if user has packages array or packageInfo
+      const hasPackages = userData.packages && Array.isArray(userData.packages) && userData.packages.length > 0;
+      const hasPackageInfo = userData.packageInfo && Object.keys(userData.packageInfo).length > 0;
+      
+      // If no packages array and no packageInfo, use legacy deduction
+      if (!hasPackages && !hasPackageInfo) {
+        const currentCredits = userData.remainingClasses || userData.lessonCredits || 0;
+        if (currentCredits <= 0) {
+          return { success: false, error: 'Kalan ders hakkı yok' };
+        }
+        console.log('⚠️ No packages, using legacy deduction. Current:', currentCredits, 'New:', currentCredits - 1);
+        await updateDoc(userRef, {
+          remainingClasses: currentCredits - 1,
+          lessonCredits: currentCredits - 1,
+          updatedAt: new Date().toISOString()
+        });
+        return {
+          success: true,
+          message: 'Ders düşüldü (legacy)',
+          usedLegacyDeduction: true,
+          totalRemaining: currentCredits - 1
+        };
+      }
+      
+      // User has packages - use normal flow
       const packagesResult = await adminService.getUserPackages(userId);
       if (!packagesResult.success) {
         return { success: false, error: packagesResult.error };
@@ -1220,14 +1255,6 @@ export const adminService = {
         return { success: false, error: 'Pakette kalan ders yok' };
       }
 
-      const userRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userRef);
-
-      if (!userDoc.exists()) {
-        return { success: false, error: 'Kullanıcı bulunamadı' };
-      }
-
-      const userData = userDoc.data();
       const packages = userData.packages || [];
 
       // Update the specific package
@@ -1243,8 +1270,7 @@ export const adminService = {
         return pkg;
       });
 
-      // Calculate new total remaining from ALL non-cancelled packages (not just active date range)
-      // FIXED: Include all packages regardless of date to show accurate total credits
+      // Calculate new total remaining from ALL non-cancelled packages
       const totalRemainingClasses = updatedPackages.reduce((sum, pkg) => {
         if (pkg.status !== 'cancelled') {
           return sum + (pkg.remainingLessons || 0);
@@ -1475,8 +1501,8 @@ export const adminService = {
     }
   },
 
-  // Update a specific package's remaining lessons
-  updateUserPackage: async (userId, packageId, newRemainingLessons) => {
+  // Update a specific package's remaining lessons and dates
+  updateUserPackage: async (userId, packageId, newRemainingLessons, newStartDate = null, newExpiryDate = null) => {
     try {
       const userRef = doc(db, 'users', userId);
       const userDoc = await getDoc(userRef);
@@ -1489,16 +1515,25 @@ export const adminService = {
       const packages = userData.packages || [];
 
       if (packages.length === 0) {
-        // User has no packages array, update root level remainingClasses only
-        await updateDoc(userRef, {
+        // User has no packages array, update root level remainingClasses and dates
+        const updateData = {
           remainingClasses: newRemainingLessons,
           lessonCredits: newRemainingLessons,
           updatedAt: new Date().toISOString()
-        });
+        };
+        
+        if (newStartDate) {
+          updateData.packageStartDate = newStartDate;
+        }
+        if (newExpiryDate) {
+          updateData.packageExpiryDate = newExpiryDate;
+        }
+        
+        await updateDoc(userRef, updateData);
 
         return {
           success: true,
-          message: 'Kalan ders sayısı güncellendi',
+          message: 'Paket bilgileri güncellendi',
           totalRemaining: newRemainingLessons
         };
       }
@@ -1512,6 +1547,13 @@ export const adminService = {
 
       // Update the package
       packages[packageIndex].remainingLessons = newRemainingLessons;
+      
+      if (newStartDate) {
+        packages[packageIndex].startDate = newStartDate;
+      }
+      if (newExpiryDate) {
+        packages[packageIndex].expiryDate = newExpiryDate;
+      }
 
       // Calculate total remaining from all non-cancelled packages
       const totalRemaining = packages.reduce((sum, pkg) => {
@@ -1521,18 +1563,41 @@ export const adminService = {
         return sum;
       }, 0);
 
-      // Update Firestore - also sync packageInfo.remainingClasses
+      // Find the latest expiry date among all packages for root level
+      const latestExpiryDate = packages
+        .filter(pkg => pkg.status !== 'cancelled' && pkg.expiryDate)
+        .map(pkg => new Date(pkg.expiryDate))
+        .sort((a, b) => b - a)[0];
+
+      // Update Firestore - also sync packageInfo and root-level fields
       const currentPackageInfo = userData.packageInfo || {};
-      await updateDoc(userRef, {
+      const updateData = {
         packages: packages,
         remainingClasses: totalRemaining,
         lessonCredits: totalRemaining,
         packageInfo: {
           ...currentPackageInfo,
-          remainingClasses: totalRemaining // FIXED: Keep packageInfo in sync
+          remainingClasses: totalRemaining
         },
         updatedAt: new Date().toISOString()
-      });
+      };
+      
+      // Update root-level dates if we're editing the "current" package
+      if (newExpiryDate) {
+        updateData.packageExpiryDate = latestExpiryDate ? latestExpiryDate.toISOString() : newExpiryDate;
+      }
+      if (newStartDate && packages[packageIndex].status !== 'cancelled') {
+        // Only update root start date if this package is the first active one
+        const earliestStartDate = packages
+          .filter(pkg => pkg.status !== 'cancelled' && pkg.startDate)
+          .map(pkg => new Date(pkg.startDate))
+          .sort((a, b) => a - b)[0];
+        if (earliestStartDate) {
+          updateData.packageStartDate = earliestStartDate.toISOString();
+        }
+      }
+      
+      await updateDoc(userRef, updateData);
 
       return {
         success: true,

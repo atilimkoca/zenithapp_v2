@@ -85,7 +85,12 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editPackage, setEditPackage] = useState(null);
   const [editRemainingLessons, setEditRemainingLessons] = useState('');
+  const [editStartDate, setEditStartDate] = useState(new Date());
+  const [editExpiryDate, setEditExpiryDate] = useState(new Date());
+  const [showEditStartDatePicker, setShowEditStartDatePicker] = useState(false);
+  const [showEditExpiryDatePicker, setShowEditExpiryDatePicker] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
+  const [editDurationDays, setEditDurationDays] = useState(30);
 
   // Load all packages for this user
   useEffect(() => {
@@ -194,6 +199,20 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
   const handleEditPackage = (pkg) => {
     setEditPackage(pkg);
     setEditRemainingLessons(String(pkg.remainingLessons || 0));
+    // Parse dates from package
+    const startDate = pkg.startDate ? new Date(pkg.startDate) : new Date();
+    const expiryDate = pkg.expiryDate ? new Date(pkg.expiryDate) : new Date();
+    
+    setEditStartDate(startDate);
+    setEditExpiryDate(expiryDate);
+    
+    // Calculate duration in days to maintain it when start date changes
+    const diffTime = Math.abs(expiryDate.getTime() - startDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    setEditDurationDays(diffDays > 0 ? diffDays : 30);
+    
+    setShowEditStartDatePicker(false);
+    setShowEditExpiryDatePicker(false);
     setShowEditModal(true);
   };
 
@@ -204,9 +223,14 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
       return;
     }
 
+    const resolvedLocale = language === 'tr' ? 'tr-TR' : language === 'en' ? 'en-US' : 'tr-TR';
+
     Alert.alert(
       'Paketi Düzenle',
-      `${editPackage.packageName} paketinin kalan ders sayısını ${newRemaining} olarak güncellemek istediğinizden emin misiniz?`,
+      `${editPackage.packageName} paketini güncellemek istediğinizden emin misiniz?\n\n` +
+      `Kalan Ders: ${newRemaining}\n` +
+      `Başlangıç: ${editStartDate.toLocaleDateString(resolvedLocale)}\n` +
+      `Bitiş: ${editExpiryDate.toLocaleDateString(resolvedLocale)}`,
       [
         { text: 'İptal', style: 'cancel' },
         {
@@ -217,7 +241,9 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
               const result = await adminService.updateUserPackage(
                 userId,
                 editPackage.id,
-                newRemaining
+                newRemaining,
+                editStartDate.toISOString(),
+                editExpiryDate.toISOString()
               );
 
               if (result.success) {
@@ -777,11 +803,9 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
 
             {editPackage && (
               <>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 600 }} contentContainerStyle={{ paddingBottom: 16 }}>
                 <View style={styles.editPackageInfo}>
                   <Text style={styles.editPackageName}>{editPackage.packageName}</Text>
-                  <Text style={styles.editPackageDates}>
-                    📅 {formatDate(editPackage.startDate, language)} - {formatDate(editPackage.expiryDate, language)}
-                  </Text>
                 </View>
 
                 <View style={styles.editInputGroup}>
@@ -796,7 +820,96 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
                   />
                 </View>
 
-                <View style={styles.editModalActions}>
+                <View style={styles.editInputGroup}>
+                  <Text style={styles.editInputLabel}>Başlangıç Tarihi</Text>
+                  <TouchableOpacity
+                    style={styles.editDateButton}
+                    onPress={() => {
+                      setShowEditExpiryDatePicker(false);
+                      setShowEditStartDatePicker(!showEditStartDatePicker);
+                    }}
+                  >
+                    <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                    <Text style={styles.editDateText}>
+                      {editStartDate.toLocaleDateString('tr-TR')}
+                    </Text>
+                    <Ionicons 
+                      name={showEditStartDatePicker ? "chevron-up" : "chevron-down"} 
+                      size={16} 
+                      color={colors.textSecondary} 
+                      style={{ marginLeft: 'auto' }}
+                    />
+                  </TouchableOpacity>
+                  {showEditStartDatePicker && (
+                    <View style={styles.inlineDatePicker}>
+                      <DateTimePicker
+                        value={editStartDate}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        themeVariant="light"
+                        textColor={colors.textPrimary}
+                        onChange={(event, date) => {
+                          if (Platform.OS === 'android') {
+                            setShowEditStartDatePicker(false);
+                          }
+                          if (date) {
+                            setEditStartDate(date);
+                            // Auto-calculate new expiry date based on preserved duration
+                            const newExpiry = new Date(date);
+                            newExpiry.setDate(newExpiry.getDate() + editDurationDays);
+                            setEditExpiryDate(newExpiry);
+                          }
+                        }}
+                        locale="tr"
+                        style={{ height: 200 }}
+                      />
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.editInputGroup}>
+                  <Text style={styles.editInputLabel}>Bitiş Tarihi</Text>
+                  <TouchableOpacity
+                    style={styles.editDateButton}
+                    onPress={() => {
+                      setShowEditStartDatePicker(false);
+                      setShowEditExpiryDatePicker(!showEditExpiryDatePicker);
+                    }}
+                  >
+                    <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                    <Text style={styles.editDateText}>
+                      {editExpiryDate.toLocaleDateString('tr-TR')}
+                    </Text>
+                    <Ionicons 
+                      name={showEditExpiryDatePicker ? "chevron-up" : "chevron-down"} 
+                      size={16} 
+                      color={colors.textSecondary} 
+                      style={{ marginLeft: 'auto' }}
+                    />
+                  </TouchableOpacity>
+                  {showEditExpiryDatePicker && (
+                    <View style={styles.inlineDatePicker}>
+                      <DateTimePicker
+                        value={editExpiryDate}
+                        mode="date"
+                        display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                        themeVariant="light"
+                        textColor={colors.textPrimary}
+                        onChange={(event, date) => {
+                          if (Platform.OS === 'android') {
+                            setShowEditExpiryDatePicker(false);
+                          }
+                          if (date) setEditExpiryDate(date);
+                        }}
+                        locale="tr"
+                        style={{ height: 200 }}
+                      />
+                    </View>
+                  )}
+                </View>
+              </ScrollView>
+              
+              <View style={[styles.editModalActions, { marginTop: 16 }]}>
                   <TouchableOpacity
                     style={styles.editCancelButton}
                     onPress={() => setShowEditModal(false)}
@@ -822,8 +935,8 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
                       )}
                     </LinearGradient>
                   </TouchableOpacity>
-                </View>
-              </>
+              </View>
+            </>
             )}
           </View>
         </View>
@@ -1401,6 +1514,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textPrimary,
     textAlign: 'center',
+  },
+  editDateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  editDateText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  inlineDatePicker: {
+    marginTop: 8,
+    backgroundColor: 'rgba(107, 127, 106, 0.05)',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   editModalActions: {
     flexDirection: 'row',

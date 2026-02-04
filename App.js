@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'expo-status-bar';
@@ -7,6 +7,7 @@ import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 // 🎄 Christmas Effects - Remove or disable after Christmas
 import { ChristmasWrapper } from './src/components/christmas';
+import ForceUpdateModal from './src/components/ForceUpdateModal';
 import PendingApprovalScreen from './src/screens/PendingApprovalScreen';
 import TermsScreen from './src/screens/TermsScreen';
 import PrivacyScreen from './src/screens/PrivacyScreen';
@@ -33,6 +34,7 @@ import { I18nProvider, useI18n } from './src/context/I18nContext';
 import { simplePushNotificationService } from './src/services/simplePushNotificationService';
 import { setupNotificationListeners } from './src/services/pushNotificationService';
 import { setupSimpleFirebaseListener } from './src/services/simpleFirebaseListener';
+import { checkForUpdate, openAppStore } from './src/services/appUpdateService';
 import FCMService from './src/services/fcmService';
 
 const Stack = createStackNavigator();
@@ -41,6 +43,41 @@ const Stack = createStackNavigator();
 function Navigation() {
   const { isAuthenticated, isApproved, isPending, isRejected, isAdmin, initializing, user } = useAuth();
   const { isLoading } = useI18n();
+  
+  // App Update State
+  const [updateInfo, setUpdateInfo] = useState(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  // Check for app updates on mount
+  useEffect(() => {
+    const checkAppUpdate = async () => {
+      try {
+        const result = await checkForUpdate();
+        if (result.updateAvailable || result.forceUpdate) {
+          setUpdateInfo(result);
+          setShowUpdateModal(true);
+        }
+      } catch (error) {
+        console.error('Error checking for app update:', error);
+      }
+    };
+    
+    checkAppUpdate();
+  }, []);
+
+  // Handle update button press
+  const handleUpdate = async () => {
+    if (updateInfo?.storeUrl) {
+      await openAppStore(updateInfo.storeUrl);
+    }
+  };
+
+  // Handle skip button press (only for non-force updates)
+  const handleSkipUpdate = () => {
+    if (!updateInfo?.forceUpdate) {
+      setShowUpdateModal(false);
+    }
+  };
 
   // Setup push notifications when user is authenticated
   useEffect(() => {
@@ -107,12 +144,25 @@ function Navigation() {
   }
 
   return (
-    <Stack.Navigator
-      screenOptions={{
-        headerShown: false,
-        cardStyle: { backgroundColor: colors.background },
-      }}
-    >
+    <>
+      {/* Force Update Modal */}
+      <ForceUpdateModal
+        visible={showUpdateModal}
+        forceUpdate={updateInfo?.forceUpdate || false}
+        currentVersion={updateInfo?.currentVersion}
+        latestVersion={updateInfo?.latestVersion}
+        updateMessage={updateInfo?.updateMessage}
+        updateMessageTr={updateInfo?.updateMessageTr}
+        onUpdate={handleUpdate}
+        onSkip={handleSkipUpdate}
+      />
+      
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+          cardStyle: { backgroundColor: colors.background },
+        }}
+      >
       {!isAuthenticated ? (
         // Auth screens
         <>
@@ -262,6 +312,7 @@ function Navigation() {
         component={PrivacyScreen}
       />
     </Stack.Navigator>
+    </>
   );
 }
 

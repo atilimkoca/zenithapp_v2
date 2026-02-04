@@ -690,5 +690,16 @@ export default {
     logoutConfirm: 'Çıkış yapmak istediğinizden emin misiniz? Onay durumunuzu daha sonra kontrol edebilirsiniz.',
     cancel: 'İptal',
     logout: 'Çıkış Yap',
-  }
+  },
+
+  // App Update
+  update: {
+    title: 'Güncelleme Mevcut',
+    currentVersion: 'Mevcut',
+    newVersion: 'Yeni',
+    defaultMessage: 'Zenith Studio\'nun yeni özellikler ve iyileştirmeler içeren yeni bir sürümü mevcut. Devam etmek için lütfen güncelleyin.',
+    forceUpdateWarning: 'Uygulamayı kullanmaya devam etmek için bu güncelleme zorunludur.',
+    updateNow: 'Şimdi Güncelle',
+    later: 'Daha Sonra',
+  },
 };

@@ -555,4 +555,15 @@
     cancel: 'Cancel',
     logout: 'Sign Out',
   },
+
+  // App Update
+  update: {
+    title: 'Update Available',
+    currentVersion: 'Current',
+    newVersion: 'New',
+    defaultMessage: 'A new version of Zenith Studio is available with exciting new features and improvements. Please update to continue.',
+    forceUpdateWarning: 'This update is required to continue using the app.',
+    updateNow: 'Update Now',
+    later: 'Maybe Later',
+  },
 };

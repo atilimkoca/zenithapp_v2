@@ -282,8 +282,8 @@ export default function AdminUserDetailScreen({ route, navigation }) {
 
           <InfoRow
             icon="time-outline"
-            label="Geçmiş Dersler"
-            value="Tüm geçmiş dersleri görüntüle"
+            label="Tüm Dersler"
+            value="Kullanıcının tüm derslerini görüntüle"
             onPress={() => navigation.navigate('AdminUserPastLessons', { userId, userName: buildUserName(user) })}
             rightIcon="chevron-forward"
           />
