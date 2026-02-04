@@ -11,6 +11,7 @@ import {
   Platform,
   Animated,
   PanResponder,
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -80,25 +81,15 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
   const [userPackages, setUserPackages] = useState([]);
   const [loadingPackages, setLoadingPackages] = useState(true);
 
+  // State for edit package modal
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editPackage, setEditPackage] = useState(null);
+  const [editRemainingLessons, setEditRemainingLessons] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
+
   // Load all packages for this user
   useEffect(() => {
-    const loadUserPackages = async () => {
-      if (!userId) return;
-
-      try {
-        setLoadingPackages(true);
-        const result = await adminService.getUserPackages(userId);
-        if (result.success) {
-          setUserPackages(result.packages);
-        }
-      } catch (error) {
-        console.error('Error loading user packages:', error);
-      } finally {
-        setLoadingPackages(false);
-      }
-    };
-
-    loadUserPackages();
+    loadUserPackagesData();
   }, [userId]);
 
   const hideRenewModal = (resetState = false) => {
@@ -198,6 +189,77 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
     }
   };
 
+  const handleEditPackage = (pkg) => {
+    setEditPackage(pkg);
+    setEditRemainingLessons(String(pkg.remainingLessons || 0));
+    setShowEditModal(true);
+  };
+
+  const handleEditSubmit = async () => {
+    const newRemaining = parseInt(editRemainingLessons, 10);
+    if (isNaN(newRemaining) || newRemaining < 0) {
+      Alert.alert('Hata', 'Geçerli bir sayı girin');
+      return;
+    }
+
+    Alert.alert(
+      'Paketi Düzenle',
+      `${editPackage.packageName} paketinin kalan ders sayısını ${newRemaining} olarak güncellemek istediğinizden emin misiniz?`,
+      [
+        { text: 'İptal', style: 'cancel' },
+        {
+          text: 'Güncelle',
+          onPress: async () => {
+            setEditLoading(true);
+            try {
+              const result = await adminService.updateUserPackage(
+                userId,
+                editPackage.id,
+                newRemaining
+              );
+
+              if (result.success) {
+                Alert.alert('Başarılı', 'Paket güncellendi', [
+                  {
+                    text: 'Tamam',
+                    onPress: () => {
+                      setShowEditModal(false);
+                      setEditPackage(null);
+                      // Refresh user packages
+                      loadUserPackagesData();
+                    },
+                  },
+                ]);
+              } else {
+                Alert.alert('Hata', result.error || 'Paket güncellenemedi');
+              }
+            } catch (error) {
+              Alert.alert('Hata', 'Bir hata oluştu');
+            } finally {
+              setEditLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const loadUserPackagesData = async () => {
+    if (!userId) return;
+
+    try {
+      setLoadingPackages(true);
+      const result = await adminService.getUserPackages(userId);
+      if (result.success) {
+        setUserPackages(result.packages);
+      }
+    } catch (error) {
+      console.error('Error loading user packages:', error);
+    } finally {
+      setLoadingPackages(false);
+    }
+  };
+
   const handleConfirmRenew = async () => {
     if (!selectedPackage) {
       Alert.alert('Uyarı', 'Lütfen bir paket seçin');
@@ -266,7 +328,22 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
     }
 
     const totalLessons = effectivePackageInfo.lessonCount || effectivePackageInfo.classes || 0;
-    const remaining = typeof remainingClasses === 'number' ? remainingClasses : (effectivePackageInfo.remainingClasses || 0);
+
+    // Calculate remaining: prioritize userPackages, then packageInfo.remainingClasses, then root level
+    let remaining = 0;
+    if (userPackages.length > 0) {
+      remaining = userPackages.reduce((sum, pkg) => {
+        if (pkg.status !== 'cancelled') {
+          return sum + (pkg.remainingLessons || 0);
+        }
+        return sum;
+      }, 0);
+    } else if (effectivePackageInfo.remainingClasses !== undefined) {
+      remaining = effectivePackageInfo.remainingClasses;
+    } else if (typeof remainingClasses === 'number') {
+      remaining = remainingClasses;
+    }
+
     const used = Math.max(totalLessons - remaining, 0);
 
     // Use root-level packageExpiryDate as primary source, fall back to effectivePackageInfo
@@ -304,7 +381,7 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
       paymentType: effectivePackageInfo.paymentType || '—',
       lessonCredits: typeof lessonCredits === 'number' ? lessonCredits : remaining,
     };
-  }, [effectivePackageInfo, remainingClasses, lessonCredits, packageExpiryDate, packageStartDate]);
+  }, [effectivePackageInfo, remainingClasses, lessonCredits, packageExpiryDate, packageStartDate, userPackages]);
 
   return (
     <View style={styles.container}>
@@ -488,6 +565,17 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
                       </Text>
                     </View>
                   </View>
+
+                  {/* Edit Button - only for non-expired packages */}
+                  {!isExpired && (
+                    <TouchableOpacity
+                      style={styles.editPackageButton}
+                      onPress={() => handleEditPackage(pkg)}
+                    >
+                      <Ionicons name="create-outline" size={16} color={colors.primary} />
+                      <Text style={styles.editPackageButtonText}>Düzenle</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               );
             })}
@@ -660,6 +748,76 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
               </TouchableOpacity>
             </View>
           </Animated.View>
+        </View>
+      </Modal>
+
+      {/* Edit Package Modal */}
+      <Modal
+        visible={showEditModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowEditModal(false)}
+      >
+        <View style={styles.editModalOverlay}>
+          <View style={styles.editModalContent}>
+            <View style={styles.editModalHeader}>
+              <Text style={styles.editModalTitle}>Paketi Düzenle</Text>
+              <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            {editPackage && (
+              <>
+                <View style={styles.editPackageInfo}>
+                  <Text style={styles.editPackageName}>{editPackage.packageName}</Text>
+                  <Text style={styles.editPackageDates}>
+                    📅 {formatDate(editPackage.startDate, language)} - {formatDate(editPackage.expiryDate, language)}
+                  </Text>
+                </View>
+
+                <View style={styles.editInputGroup}>
+                  <Text style={styles.editInputLabel}>Kalan Ders Sayısı</Text>
+                  <TextInput
+                    style={styles.editInput}
+                    value={editRemainingLessons}
+                    onChangeText={setEditRemainingLessons}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+
+                <View style={styles.editModalActions}>
+                  <TouchableOpacity
+                    style={styles.editCancelButton}
+                    onPress={() => setShowEditModal(false)}
+                    disabled={editLoading}
+                  >
+                    <Text style={styles.editCancelText}>İptal</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.editSaveButton}
+                    onPress={handleEditSubmit}
+                    disabled={editLoading}
+                  >
+                    <LinearGradient
+                      colors={[colors.primary, colors.primaryDark]}
+                      style={styles.editSaveGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                    >
+                      {editLoading ? (
+                        <ActivityIndicator size="small" color={colors.white} />
+                      ) : (
+                        <Text style={styles.editSaveText}>Kaydet</Text>
+                      )}
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
         </View>
       </Modal>
     </View>
@@ -1149,5 +1307,122 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 14,
     color: colors.textSecondary,
+  },
+
+  // Edit Package Button
+  editPackageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(107, 127, 106, 0.08)',
+    gap: 6,
+  },
+  editPackageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+
+  // Edit Modal Styles
+  editModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  editModalContent: {
+    backgroundColor: colors.white,
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  editModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  editModalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  editPackageInfo: {
+    backgroundColor: 'rgba(107, 127, 106, 0.08)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  editPackageName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 6,
+  },
+  editPackageDates: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  editInputGroup: {
+    marginBottom: 24,
+  },
+  editInputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 8,
+  },
+  editInput: {
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 18,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    textAlign: 'center',
+  },
+  editModalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  editCancelButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.textSecondary,
+    alignItems: 'center',
+  },
+  editCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  editSaveButton: {
+    flex: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  editSaveGradient: {
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  editSaveText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.white,
   },
 });

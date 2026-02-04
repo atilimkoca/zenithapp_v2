@@ -69,19 +69,35 @@ export const adminService = {
       if (packageData && packageData.id) {
         // Extract lesson count - try multiple field names for compatibility
         const lessonCount = packageData.lessonCount || packageData.lessons || packageData.classes || 0;
+        const packageType = packageData.packageType || packageData.type || packageData.category || (packageData.isOneOnOne ? 'one-on-one' : 'group');
+        const packageName = packageData.name || 'Bilinmeyen Paket';
+
+        // Create package entry for packages array (multi-package support)
+        const newPackage = {
+          id: `pkg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          packageId: packageData.id,
+          packageName: packageName,
+          packageType: packageType,
+          startDate: now.toISOString(),
+          expiryDate: expiryDate.toISOString(),
+          totalLessons: lessonCount,
+          remainingLessons: lessonCount,
+          assignedAt: now.toISOString(),
+          assignedBy: adminId,
+          status: 'active',
+          duration: 1
+        };
 
         // Set both root-level and packageInfo fields for consistency
         updateData.packageExpiryDate = expiryDate.toISOString();
         updateData.packageStartDate = now.toISOString();
+        updateData.packages = [newPackage]; // Add packages array
         updateData.packageInfo = {
           packageId: packageData.id,
-          packageName: packageData.name || 'Bilinmeyen Paket',
-          packageType:
-            packageData.packageType ||
-            packageData.type ||
-            packageData.category ||
-            (packageData.isOneOnOne ? 'one-on-one' : 'group'), // Include package type
+          packageName: packageName,
+          packageType: packageType,
           lessonCount: lessonCount,
+          remainingClasses: lessonCount, // Also store remainingClasses in packageInfo
           assignedAt: now.toISOString(),
           expiryDate: expiryDate.toISOString()
         };
@@ -91,11 +107,13 @@ export const adminService = {
         // Set expiry date even without package
         updateData.packageExpiryDate = expiryDate.toISOString();
         updateData.packageStartDate = now.toISOString();
+        updateData.packages = []; // Empty packages array
         updateData.packageInfo = {
           packageId: null,
           packageName: 'Paket Atanmadı',
           packageType: null,
           lessonCount: 0,
+          remainingClasses: 0,
           assignedAt: now.toISOString(),
           expiryDate: expiryDate.toISOString()
         };
@@ -153,30 +171,68 @@ export const adminService = {
       
       const userData = userDoc.data();
       const now = new Date();
-      
+
       // Calculate new expiry date (30 days from now)
       const expiryDate = new Date(now);
       expiryDate.setDate(expiryDate.getDate() + 30);
-      
+
+      const packageName = packageData.name || 'Bilinmeyen Paket';
+      const packageType = packageData.packageType || packageData.type || packageData.category || (packageData.isOneOnOne ? 'one-on-one' : 'group');
+
+      // Create new package entry for packages array (multi-package support)
+      const newPackage = {
+        id: `pkg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        packageId: packageData.id,
+        packageName: packageName,
+        packageType: packageType,
+        startDate: now.toISOString(),
+        expiryDate: expiryDate.toISOString(),
+        totalLessons: lessonCount,
+        remainingLessons: lessonCount,
+        assignedAt: now.toISOString(),
+        assignedBy: adminId,
+        status: 'active',
+        duration: 1
+      };
+
+      // Get existing packages and add new one
+      const existingPackages = userData.packages || [];
+      existingPackages.push(newPackage);
+
+      // Calculate total remaining from all packages
+      const totalRemainingClasses = existingPackages.reduce((sum, pkg) => {
+        if (pkg.status !== 'cancelled') {
+          return sum + (pkg.remainingLessons || 0);
+        }
+        return sum;
+      }, 0);
+
+      // Find the latest expiry date
+      const latestExpiry = existingPackages
+        .filter(pkg => pkg.status !== 'cancelled')
+        .reduce((latest, pkg) => {
+          const exp = new Date(pkg.expiryDate);
+          return exp > latest ? exp : latest;
+        }, new Date(0));
+
       const updateData = {
+        packages: existingPackages, // Add to packages array
         packageInfo: {
           packageId: packageData.id,
-          packageName: packageData.name || 'Bilinmeyen Paket',
-          packageType:
-            packageData.packageType ||
-            packageData.type ||
-            packageData.category ||
-            (packageData.isOneOnOne ? 'one-on-one' : 'group'), // Include package type
+          packageName: packageName,
+          packageType: packageType,
           lessonCount: lessonCount,
+          remainingClasses: lessonCount,
           assignedAt: now.toISOString(),
           expiryDate: expiryDate.toISOString(),
           renewedBy: adminId
         },
-        remainingClasses: lessonCount,
-        lessonCredits: lessonCount,
+        remainingClasses: totalRemainingClasses,
+        lessonCredits: totalRemainingClasses,
+        packageExpiryDate: latestExpiry.toISOString(),
         updatedAt: now.toISOString()
       };
-      
+
       await setDoc(userRef, updateData, { merge: true });
       
       return {
@@ -699,6 +755,23 @@ export const adminService = {
       const expiryDate = new Date(startDate);
       expiryDate.setDate(expiryDate.getDate() + (durationMonths * 30));
 
+      // Create package entry for packages array (multi-package support)
+      const newPackage = {
+        id: `pkg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        packageId: packageId,
+        packageName: packageName,
+        packageType: packageType,
+        startDate: startDate.toISOString(),
+        expiryDate: expiryDate.toISOString(),
+        totalLessons: lessonCount,
+        remainingLessons: lessonCount,
+        assignedAt: new Date().toISOString(),
+        assignedBy: 'admin',
+        status: 'active',
+        price: price,
+        duration: durationMonths
+      };
+
       // Update user with package and approve
       const updateData = {
         status: 'approved',
@@ -709,6 +782,7 @@ export const adminService = {
         lessonCredits: lessonCount,
         packageExpiryDate: expiryDate.toISOString(),
         packageStartDate: startDate.toISOString(),
+        packages: [newPackage], // Add packages array
         packageInfo: {
           packageId: packageId,
           packageName: packageName,
@@ -778,18 +852,58 @@ export const adminService = {
         };
       }
 
+      const userData = userDoc.data();
+
       // Calculate dates
       const startDate = new Date(startDateISO);
       const expiryDate = new Date(startDate);
       expiryDate.setDate(expiryDate.getDate() + (durationMonths * 30));
 
+      // Create new package entry
+      const newPackage = {
+        id: `pkg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        packageId: packageId,
+        packageName: packageName,
+        packageType: packageType,
+        startDate: startDate.toISOString(),
+        expiryDate: expiryDate.toISOString(),
+        totalLessons: lessonCount,
+        remainingLessons: lessonCount,
+        assignedAt: new Date().toISOString(),
+        assignedBy: 'admin',
+        status: 'active',
+        price: price,
+        duration: durationMonths
+      };
+
+      // Get existing packages and add new one (multi-package support)
+      const existingPackages = userData.packages || [];
+      existingPackages.push(newPackage);
+
+      // Calculate total remaining from all packages
+      const totalRemainingClasses = existingPackages.reduce((sum, pkg) => {
+        if (pkg.status !== 'cancelled') {
+          return sum + (pkg.remainingLessons || 0);
+        }
+        return sum;
+      }, 0);
+
+      // Find the latest expiry date
+      const latestExpiry = existingPackages
+        .filter(pkg => pkg.status !== 'cancelled')
+        .reduce((latest, pkg) => {
+          const exp = new Date(pkg.expiryDate);
+          return exp > latest ? exp : latest;
+        }, new Date(0));
+
       // Update user with new package
       const updateData = {
-        remainingClasses: lessonCount,
-        lessonCredits: lessonCount,
+        remainingClasses: totalRemainingClasses,
+        lessonCredits: totalRemainingClasses,
         membershipStatus: 'active',
-        packageExpiryDate: expiryDate.toISOString(),
+        packageExpiryDate: latestExpiry.toISOString(),
         packageStartDate: startDate.toISOString(),
+        packages: existingPackages, // Add to packages array
         packageInfo: {
           packageId: packageId,
           packageName: packageName,
@@ -900,12 +1014,10 @@ export const adminService = {
       // Add new package
       existingPackages.push(newPackage);
 
-      // Calculate total remaining lessons across all active packages
-      const now = new Date();
+      // Calculate total remaining lessons across ALL non-cancelled packages
+      // FIXED: Include all packages regardless of date to show accurate total credits
       const totalRemainingClasses = existingPackages.reduce((sum, pkg) => {
-        const pkgStart = new Date(pkg.startDate);
-        const pkgExpiry = new Date(pkg.expiryDate);
-        if (pkgStart <= now && pkgExpiry >= now && pkg.status === 'active') {
+        if (pkg.status !== 'cancelled') {
           return sum + (pkg.remainingLessons || 0);
         }
         return sum;
@@ -1126,12 +1238,10 @@ export const adminService = {
         return pkg;
       });
 
-      // Calculate new total remaining
-      const now = new Date();
+      // Calculate new total remaining from ALL non-cancelled packages (not just active date range)
+      // FIXED: Include all packages regardless of date to show accurate total credits
       const totalRemainingClasses = updatedPackages.reduce((sum, pkg) => {
-        const pkgStart = new Date(pkg.startDate);
-        const pkgExpiry = new Date(pkg.expiryDate);
-        if (pkgStart <= now && pkgExpiry >= now && pkg.status !== 'cancelled') {
+        if (pkg.status !== 'cancelled') {
           return sum + (pkg.remainingLessons || 0);
         }
         return sum;
@@ -1241,12 +1351,10 @@ export const adminService = {
         return pkg;
       });
 
-      // Calculate new total remaining
-      const now = new Date();
+      // Calculate new total remaining from ALL non-cancelled packages (not just active date range)
+      // FIXED: Include all packages regardless of date to show accurate total credits
       const totalRemainingClasses = updatedPackages.reduce((sum, pkg) => {
-        const pkgStart = new Date(pkg.startDate);
-        const pkgExpiry = new Date(pkg.expiryDate);
-        if (pkgStart <= now && pkgExpiry >= now && pkg.status !== 'cancelled') {
+        if (pkg.status !== 'cancelled') {
           return sum + (pkg.remainingLessons || 0);
         }
         return sum;
@@ -1284,7 +1392,11 @@ export const adminService = {
     }
 
     const packageInfo = userData.packageInfo || {};
-    const remainingClasses = userData.remainingClasses || userData.lessonCredits || 0;
+
+    // FIXED: Check packageInfo.remainingClasses first, then root level values
+    const remainingClasses = packageInfo.remainingClasses !== undefined
+      ? packageInfo.remainingClasses
+      : (userData.remainingClasses || userData.lessonCredits || 0);
 
     if (remainingClasses <= 0 && !userData.packageExpiryDate) {
       return null;
@@ -1330,6 +1442,74 @@ export const adminService = {
     } catch (error) {
       console.error('❌ Error getting visible date ranges:', error);
       return { success: false, error: 'Tarih aralığı getirilemedi' };
+    }
+  },
+
+  // Update a specific package's remaining lessons
+  updateUserPackage: async (userId, packageId, newRemainingLessons) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        return { success: false, error: 'Kullanıcı bulunamadı' };
+      }
+
+      const userData = userDoc.data();
+      const packages = userData.packages || [];
+
+      if (packages.length === 0) {
+        // User has no packages array, update root level remainingClasses only
+        await updateDoc(userRef, {
+          remainingClasses: newRemainingLessons,
+          lessonCredits: newRemainingLessons,
+          updatedAt: new Date().toISOString()
+        });
+
+        return {
+          success: true,
+          message: 'Kalan ders sayısı güncellendi',
+          totalRemaining: newRemainingLessons
+        };
+      }
+
+      // Find and update the specific package
+      const packageIndex = packages.findIndex(pkg => pkg.id === packageId);
+
+      if (packageIndex === -1) {
+        return { success: false, error: 'Paket bulunamadı' };
+      }
+
+      // Update the package
+      packages[packageIndex].remainingLessons = newRemainingLessons;
+
+      // Calculate total remaining from all non-cancelled packages
+      const totalRemaining = packages.reduce((sum, pkg) => {
+        if (pkg.status !== 'cancelled') {
+          return sum + (pkg.remainingLessons || 0);
+        }
+        return sum;
+      }, 0);
+
+      // Update Firestore
+      await updateDoc(userRef, {
+        packages: packages,
+        remainingClasses: totalRemaining,
+        lessonCredits: totalRemaining,
+        updatedAt: new Date().toISOString()
+      });
+
+      return {
+        success: true,
+        message: 'Paket güncellendi',
+        totalRemaining: totalRemaining
+      };
+    } catch (error) {
+      console.error('❌ Error updating user package:', error);
+      return {
+        success: false,
+        error: 'Paket güncellenirken hata oluştu'
+      };
     }
   }
 };

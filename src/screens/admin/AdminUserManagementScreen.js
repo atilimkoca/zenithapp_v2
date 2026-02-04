@@ -42,8 +42,23 @@ const UserListItem = ({ user, onPress }) => {
   const isRejected = user?.status === 'rejected';
   const isApproved = user?.status === 'approved';
 
-  // Get remaining sessions info
-  const remainingClasses = user?.remainingClasses ?? user?.lessonCredits ?? 0;
+  // Get remaining sessions info - check packages array first, then packageInfo, then root level
+  const getRemaining = () => {
+    const packages = user?.packages || [];
+    if (packages.length > 0) {
+      return packages.reduce((sum, pkg) => {
+        if (pkg.status !== 'cancelled') {
+          return sum + (pkg.remainingLessons || 0);
+        }
+        return sum;
+      }, 0);
+    }
+    if (user?.packageInfo?.remainingClasses !== undefined) {
+      return user.packageInfo.remainingClasses;
+    }
+    return user?.remainingClasses ?? user?.lessonCredits ?? 0;
+  };
+  const remainingClasses = getRemaining();
   const totalClasses = user?.packageInfo?.lessonCount ?? remainingClasses;
 
   // Determine styling based on status

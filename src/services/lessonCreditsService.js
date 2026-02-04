@@ -3,23 +3,49 @@ import { db } from '../config/firebase';
 
 export const lessonCreditsService = {
   // Get user's lesson credits
+  // FIXED: Now calculates from packages array if available for accurate count
   getUserCredits: async (userId) => {
     try {
-      
+
       const userRef = doc(db, 'users', userId);
       const userDoc = await getDoc(userRef);
-      
+
       if (!userDoc.exists()) {
         return {
           success: false,
           message: 'Kullanıcı bulunamadı.'
         };
       }
-      
+
       const userData = userDoc.data();
-      // Check both field names for compatibility
+
+      // If user has packages array with items, calculate from packages
+      const packages = userData.packages || [];
+      if (packages.length > 0) {
+        const calculatedCredits = packages.reduce((sum, pkg) => {
+          if (pkg.status !== 'cancelled') {
+            return sum + (pkg.remainingLessons || 0);
+          }
+          return sum;
+        }, 0);
+
+        return {
+          success: true,
+          credits: calculatedCredits
+        };
+      }
+
+      // If packages is empty but packageInfo exists, use packageInfo.remainingClasses
+      if (userData.packageInfo && userData.packageInfo.remainingClasses !== undefined) {
+        return {
+          success: true,
+          credits: userData.packageInfo.remainingClasses
+        };
+      }
+
+      // Final fallback to root level values
       const credits = userData.remainingClasses || userData.lessonCredits || 0;
-      
+
       return {
         success: true,
         credits: credits
