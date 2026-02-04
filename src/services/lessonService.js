@@ -1684,6 +1684,27 @@ const adminLessonService = {
         };
       }
       
+      const lessonData = lessonDoc.data();
+      const participants = lessonData.participants || [];
+      const lessonScheduledDate = lessonData.scheduledDate || lessonData.date;
+      
+      // Refund credits to all participants
+      if (participants.length > 0 && lessonScheduledDate) {
+        const adminService = require('./adminService').default;
+        for (const participantId of participants) {
+          try {
+            await adminService.refundLessonToPackage(
+              participantId,
+              lessonScheduledDate,
+              `Ders iptal edildi: ${lessonData.title || 'İsimsiz Ders'}`
+            );
+            console.log(`✅ Credit refunded for participant: ${participantId}`);
+          } catch (refundError) {
+            console.error(`❌ Failed to refund credit for participant ${participantId}:`, refundError);
+          }
+        }
+      }
+      
       await updateDoc(lessonRef, {
         status: 'cancelled',
         cancelledAt: new Date().toISOString(),
@@ -1708,7 +1729,34 @@ const adminLessonService = {
   // Permanently delete a lesson
   deleteLesson: async (lessonId) => {
     try {
-      await deleteDoc(doc(db, 'lessons', lessonId));
+      // First get the lesson to refund participants
+      const lessonRef = doc(db, 'lessons', lessonId);
+      const lessonDoc = await getDoc(lessonRef);
+      
+      if (lessonDoc.exists()) {
+        const lessonData = lessonDoc.data();
+        const participants = lessonData.participants || [];
+        const lessonScheduledDate = lessonData.scheduledDate || lessonData.date;
+        
+        // Refund credits to all participants before deleting
+        if (participants.length > 0 && lessonScheduledDate) {
+          const adminService = require('./adminService').default;
+          for (const participantId of participants) {
+            try {
+              await adminService.refundLessonToPackage(
+                participantId,
+                lessonScheduledDate,
+                `Ders silindi: ${lessonData.title || 'İsimsiz Ders'}`
+              );
+              console.log(`✅ Credit refunded for participant: ${participantId}`);
+            } catch (refundError) {
+              console.error(`❌ Failed to refund credit for participant ${participantId}:`, refundError);
+            }
+          }
+        }
+      }
+      
+      await deleteDoc(lessonRef);
       return {
         success: true,
         message: 'Ders silindi.'
@@ -2085,12 +2133,26 @@ const adminLessonService = {
         };
       }
       
-      // Deduct one credit from user
-      await updateDoc(userRef, {
-        remainingClasses: remainingCredits - 1,
-        lessonCredits: remainingCredits - 1,
-        updatedAt: serverTimestamp()
-      });
+      // Get lesson date for package deduction
+      let lessonDateForDeduction = lessonData.scheduledDate;
+      if (typeof lessonDateForDeduction === 'object' && lessonDateForDeduction.toDate) {
+        lessonDateForDeduction = lessonDateForDeduction.toDate().toISOString();
+      }
+
+      // Deduct lesson from the appropriate package using multi-package system
+      const { adminService } = await import('./adminService');
+      const deductResult = await adminService.deductLessonFromPackage(
+        userId,
+        lessonDateForDeduction,
+        `Admin ekledi: ${lessonData.title} - ${lessonData.scheduledDate}`
+      );
+
+      if (!deductResult.success) {
+        return {
+          success: false,
+          message: deductResult.error || 'Ders kredisi düşülürken bir hata oluştu.'
+        };
+      }
       
       // Add user to participants
       await updateDoc(lessonRef, {
@@ -2114,8 +2176,9 @@ const adminLessonService = {
       
       return {
         success: true,
-        message: `Öğrenci derse başarıyla eklendi. Kalan ders: ${remainingCredits - 1}`,
-        remainingCredits: remainingCredits - 1
+        message: `Öğrenci derse başarıyla eklendi. (${deductResult.packageName || 'Paket'} - Kalan: ${deductResult.totalRemaining})`,
+        remainingCredits: deductResult.totalRemaining,
+        deductedFromPackage: deductResult.packageName
       };
     } catch (error) {
       console.error('Error adding student to lesson:', error);
@@ -2152,19 +2215,23 @@ const adminLessonService = {
         };
       }
       
-      // Refund credit to user
-      const userRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userRef);
-      
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        const currentCredits = userData.remainingClasses || userData.lessonCredits || 0;
-        
-        await updateDoc(userRef, {
-          remainingClasses: currentCredits + 1,
-          lessonCredits: currentCredits + 1,
-          updatedAt: serverTimestamp()
-        });
+      // Get lesson date for package refund
+      let lessonDateForRefund = lessonData.scheduledDate;
+      if (typeof lessonDateForRefund === 'object' && lessonDateForRefund.toDate) {
+        lessonDateForRefund = lessonDateForRefund.toDate().toISOString();
+      }
+
+      // Refund credit to the appropriate package using multi-package system
+      const { adminService } = await import('./adminService');
+      const refundResult = await adminService.refundLessonToPackage(
+        userId,
+        lessonDateForRefund,
+        `Admin çıkardı: ${lessonData.title} - ${lessonData.scheduledDate}`
+      );
+
+      if (!refundResult.success) {
+        console.warn('⚠️ Credit refund failed:', refundResult.error);
+        // Continue with removal even if refund fails
       }
       
       // Remove user from participants
@@ -2196,7 +2263,10 @@ const adminLessonService = {
       
       return {
         success: true,
-        message: 'Öğrenci dersten başarıyla çıkarıldı. Ders kredisi iade edildi.'
+        message: refundResult.success 
+          ? `Öğrenci dersten çıkarıldı. (${refundResult.packageName || 'Paket'} - Kalan: ${refundResult.totalRemaining})`
+          : 'Öğrenci dersten çıkarıldı. (Kredi iadesi yapılamadı)',
+        remainingCredits: refundResult.totalRemaining
       };
     } catch (error) {
       console.error('Error removing student from lesson:', error);

@@ -121,7 +121,8 @@ export const lessonCreditsService = {
   },
 
   // Consume/reduce lesson credits (when booking a lesson)
-  consumeUserCredit: async (userId, reason = 'Ders rezervasyonu') => {
+  // lessonDate: The date of the lesson being booked (to find which package to decrement)
+  consumeUserCredit: async (userId, reason = 'Ders rezervasyonu', lessonDate = null) => {
     try {
       
       const userRef = doc(db, 'users', userId);
@@ -144,19 +145,63 @@ export const lessonCreditsService = {
         };
       }
       
-      // Use Firestore increment for atomic operation (negative value to subtract)
-      await updateDoc(userRef, {
-        remainingClasses: increment(-1), // Use remainingClasses field
-        lessonCredits: increment(-1), // Also update lessonCredits for compatibility
+      const newCredits = currentCredits - 1;
+      
+      // Update all credit-related fields including packageInfo
+      const updateData = {
+        remainingClasses: newCredits,
+        lessonCredits: newCredits,
         updatedAt: new Date().toISOString()
-      });
+      };
+      
+      // Also update packageInfo.remainingClasses if packageInfo exists
+      if (userData.packageInfo) {
+        updateData['packageInfo.remainingClasses'] = newCredits;
+      }
+      
+      // Update the correct package in packages array based on lesson date
+      if (userData.packages && userData.packages.length > 0) {
+        const lessonDateTime = lessonDate ? new Date(lessonDate) : new Date();
+        const packages = [...userData.packages];
+        
+        // Find the package whose date range contains the lesson date and has remaining lessons
+        const packageIndex = packages.findIndex(pkg => {
+          if (pkg.status === 'cancelled' || pkg.remainingLessons <= 0) return false;
+          const startDate = new Date(pkg.startDate);
+          const expiryDate = new Date(pkg.expiryDate);
+          return lessonDateTime >= startDate && lessonDateTime <= expiryDate;
+        });
+        
+        if (packageIndex !== -1) {
+          // Decrement the matching package's remainingLessons
+          packages[packageIndex] = {
+            ...packages[packageIndex],
+            remainingLessons: packages[packageIndex].remainingLessons - 1
+          };
+          updateData.packages = packages;
+        } else {
+          // Fallback: find any active package with remaining lessons
+          const fallbackIndex = packages.findIndex(pkg => 
+            pkg.status !== 'cancelled' && pkg.remainingLessons > 0
+          );
+          if (fallbackIndex !== -1) {
+            packages[fallbackIndex] = {
+              ...packages[fallbackIndex],
+              remainingLessons: packages[fallbackIndex].remainingLessons - 1
+            };
+            updateData.packages = packages;
+          }
+        }
+      }
+      
+      await updateDoc(userRef, updateData);
 
       // Log the transaction
       await lessonCreditsService.logCreditTransaction(userId, -1, 'consume', reason);
       
       return {
         success: true,
-        remainingCredits: currentCredits - 1,
+        remainingCredits: newCredits,
         message: 'Ders kredisi kullanıldı.'
       };
     } catch (error) {
@@ -170,17 +215,74 @@ export const lessonCreditsService = {
   },
 
   // Refund lesson credit (when cancelling a lesson)
-  refundUserCredit: async (userId, reason = 'Ders iptali') => {
+  // lessonDate: The date of the lesson being cancelled (to find which package to increment)
+  refundUserCredit: async (userId, reason = 'Ders iptali', lessonDate = null) => {
     try {
       
       const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
       
-      // Use Firestore increment for atomic operation
-      await updateDoc(userRef, {
-        remainingClasses: increment(1), // Use remainingClasses field
-        lessonCredits: increment(1), // Also update lessonCredits for compatibility
+      if (!userDoc.exists()) {
+        return {
+          success: false,
+          message: 'Kullanıcı bulunamadı.'
+        };
+      }
+      
+      const userData = userDoc.data();
+      const currentCredits = userData.remainingClasses || userData.lessonCredits || 0;
+      const newCredits = currentCredits + 1;
+      
+      // Update all credit-related fields including packageInfo
+      const updateData = {
+        remainingClasses: newCredits,
+        lessonCredits: newCredits,
         updatedAt: new Date().toISOString()
-      });
+      };
+      
+      // Also update packageInfo.remainingClasses if packageInfo exists
+      if (userData.packageInfo) {
+        updateData['packageInfo.remainingClasses'] = newCredits;
+      }
+      
+      // Update the correct package in packages array based on lesson date
+      if (userData.packages && userData.packages.length > 0) {
+        const lessonDateTime = lessonDate ? new Date(lessonDate) : new Date();
+        const packages = [...userData.packages];
+        
+        // Find the package whose date range contains the lesson date
+        const packageIndex = packages.findIndex(pkg => {
+          if (pkg.status === 'cancelled') return false;
+          const startDate = new Date(pkg.startDate);
+          const expiryDate = new Date(pkg.expiryDate);
+          return lessonDateTime >= startDate && lessonDateTime <= expiryDate;
+        });
+        
+        if (packageIndex !== -1) {
+          // Increment the matching package's remainingLessons (but not exceed totalLessons)
+          const pkg = packages[packageIndex];
+          const maxLessons = pkg.totalLessons || 999;
+          packages[packageIndex] = {
+            ...pkg,
+            remainingLessons: Math.min(pkg.remainingLessons + 1, maxLessons)
+          };
+          updateData.packages = packages;
+        } else {
+          // Fallback: find any active package
+          const fallbackIndex = packages.findIndex(pkg => pkg.status !== 'cancelled');
+          if (fallbackIndex !== -1) {
+            const pkg = packages[fallbackIndex];
+            const maxLessons = pkg.totalLessons || 999;
+            packages[fallbackIndex] = {
+              ...pkg,
+              remainingLessons: Math.min(pkg.remainingLessons + 1, maxLessons)
+            };
+            updateData.packages = packages;
+          }
+        }
+      }
+      
+      await updateDoc(userRef, updateData);
 
       // Log the transaction
       await lessonCreditsService.logCreditTransaction(userId, 1, 'refund', reason);
