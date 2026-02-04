@@ -58,8 +58,30 @@ const UserListItem = ({ user, onPress }) => {
     }
     return user?.remainingClasses ?? user?.lessonCredits ?? 0;
   };
+  
+  // Get total lessons - check packages array first, then packageInfo, then root level
+  const getTotal = () => {
+    const packages = user?.packages || [];
+    if (packages.length > 0) {
+      return packages.reduce((sum, pkg) => {
+        if (pkg.status !== 'cancelled') {
+          return sum + (pkg.totalLessons || 0);
+        }
+        return sum;
+      }, 0);
+    }
+    // Check packageInfo for various field names
+    const pkgInfo = user?.packageInfo;
+    if (pkgInfo) {
+      const total = pkgInfo.totalLessons || pkgInfo.lessonCount || pkgInfo.classes || pkgInfo.sessions;
+      if (total) return total;
+    }
+    // Check root level
+    return user?.totalLessons || user?.totalClasses || getRemaining();
+  };
+  
   const remainingClasses = getRemaining();
-  const totalClasses = user?.packageInfo?.lessonCount ?? remainingClasses;
+  const totalClasses = getTotal();
 
   // Determine styling based on status
   const itemStyle = [

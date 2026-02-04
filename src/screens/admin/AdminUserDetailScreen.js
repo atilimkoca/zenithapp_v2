@@ -160,6 +160,9 @@ export default function AdminUserDetailScreen({ route, navigation }) {
       lessonCredits: user?.lessonCredits ?? null,
       packageExpiryDate: user?.packageExpiryDate ?? null,
       packageStartDate: user?.packageStartDate ?? null,
+      packageName: user?.packageName ?? user?.packageInfo?.packageName ?? null,
+      packageType: user?.packageType ?? user?.packageInfo?.packageType ?? null,
+      totalLessons: user?.totalLessons ?? user?.packageInfo?.totalLessons ?? user?.packageInfo?.lessonCount ?? null,
     });
   };
 
@@ -272,7 +275,7 @@ export default function AdminUserDetailScreen({ route, navigation }) {
           <InfoRow
             icon="card-outline"
             label="Üyelikler"
-            value={user?.packageInfo?.packageName || 'Üyelik bulunamadı'}
+            value={user?.packageInfo?.packageName || user?.packageName || (user?.remainingClasses > 0 ? 'Mevcut Paket' : 'Üyelik bulunamadı')}
             onPress={handleMembershipPress}
             rightIcon="chevron-forward"
           />

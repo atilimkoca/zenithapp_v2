@@ -51,6 +51,14 @@ export default function NotificationScreen({ navigation, visible, onClose, route
       await markAsRead(notification.id);
     }
 
+    // Show full notification content in an alert
+    Alert.alert(
+      notification.title || 'Bildirim',
+      notification.message || '',
+      [{ text: 'Tamam', style: 'default' }],
+      { cancelable: true }
+    );
+
     // Handle navigation based on notification type
     if (notification.actionUrl) {
       // Parse action URL and navigate accordingly

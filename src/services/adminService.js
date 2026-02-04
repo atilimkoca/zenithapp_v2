@@ -1423,14 +1423,23 @@ export const adminService = {
       return null;
     }
 
+    // Get totalLessons from packageInfo - look for various field names
+    const totalLessons = packageInfo.totalLessons || 
+                         packageInfo.lessonCount || 
+                         packageInfo.classes || 
+                         packageInfo.sessions ||
+                         userData.totalLessons ||
+                         userData.totalClasses ||
+                         remainingClasses; // Only fallback to remaining if nothing else available
+
     return {
       id: packageInfo.packageId || `legacy_${Date.now()}`,
       packageId: packageInfo.packageId || null,
-      packageName: packageInfo.packageName || 'Mevcut Paket',
+      packageName: packageInfo.packageName || userData.packageName || 'Mevcut Paket',
       packageType: packageInfo.packageType || userData.packageType || 'group',
       startDate: userData.packageStartDate || packageInfo.assignedAt || userData.approvedAt || new Date().toISOString(),
       expiryDate: userData.packageExpiryDate || packageInfo.expiryDate || new Date().toISOString(),
-      totalLessons: packageInfo.lessonCount || remainingClasses,
+      totalLessons: totalLessons,
       remainingLessons: remainingClasses,
       assignedAt: packageInfo.assignedAt || userData.approvedAt || new Date().toISOString(),
       assignedBy: userData.approvedBy || 'system_migration',

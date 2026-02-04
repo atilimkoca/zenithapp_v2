@@ -155,16 +155,18 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
     if (isApproved && credits > 0) {
       return {
         packageId: 'legacy_package',
-        packageName: 'Mevcut Paket',
-        packageType: 'group',
-        lessonCount: credits,
+        packageName: route.params?.packageName || 'Mevcut Paket',
+        packageType: route.params?.packageType || 'group',
+        totalLessons: route.params?.totalLessons || credits, // Use totalLessons if available, fallback to credits
+        lessonCount: route.params?.totalLessons || credits,
+        remainingClasses: credits,
         assignedAt: packageStartDate || null,
         expiryDate: packageExpiryDate || null,
       };
     }
 
     return null;
-  }, [packageInfo, remainingClasses, lessonCredits, packageStartDate, packageExpiryDate, isApproved]);
+  }, [packageInfo, remainingClasses, lessonCredits, packageStartDate, packageExpiryDate, isApproved, route.params]);
 
   const hasPackage = isApproved && effectivePackageInfo !== null;
   const requiresApprovalFlow = !hasPackage;
@@ -327,21 +329,27 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
       return null;
     }
 
-    const totalLessons = effectivePackageInfo.lessonCount || effectivePackageInfo.classes || 0;
-
-    // Calculate remaining: prioritize userPackages, then packageInfo.remainingClasses, then root level
+    // Calculate total and remaining from userPackages if available (multi-package support)
+    let totalLessons = 0;
     let remaining = 0;
+    
     if (userPackages.length > 0) {
-      remaining = userPackages.reduce((sum, pkg) => {
+      // Sum up from all non-cancelled packages
+      userPackages.forEach(pkg => {
         if (pkg.status !== 'cancelled') {
-          return sum + (pkg.remainingLessons || 0);
+          totalLessons += (pkg.totalLessons || 0);
+          remaining += (pkg.remainingLessons || 0);
         }
-        return sum;
-      }, 0);
-    } else if (effectivePackageInfo.remainingClasses !== undefined) {
-      remaining = effectivePackageInfo.remainingClasses;
-    } else if (typeof remainingClasses === 'number') {
-      remaining = remainingClasses;
+      });
+    } else {
+      // Fallback to effectivePackageInfo
+      totalLessons = effectivePackageInfo.totalLessons || effectivePackageInfo.lessonCount || effectivePackageInfo.classes || 0;
+      
+      if (effectivePackageInfo.remainingClasses !== undefined) {
+        remaining = effectivePackageInfo.remainingClasses;
+      } else if (typeof remainingClasses === 'number') {
+        remaining = remainingClasses;
+      }
     }
 
     const used = Math.max(totalLessons - remaining, 0);
