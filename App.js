@@ -48,17 +48,30 @@ function Navigation() {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
-  // Check for app updates on mount
+  // Check for app updates on mount - with retry logic
   useEffect(() => {
+    let retryCount = 0;
+    const maxRetries = 3;
+    
     const checkAppUpdate = async () => {
       try {
+        console.log('🔄 Checking for app update... (attempt', retryCount + 1, ')');
         const result = await checkForUpdate();
+        console.log('📱 Update check result:', JSON.stringify(result));
         if (result.updateAvailable || result.forceUpdate) {
           setUpdateInfo(result);
           setShowUpdateModal(true);
+        } else if (result.error && retryCount < maxRetries) {
+          // Retry if there was an error (Firebase might not be ready)
+          retryCount++;
+          setTimeout(checkAppUpdate, 2000 * retryCount);
         }
       } catch (error) {
         console.error('Error checking for app update:', error);
+        if (retryCount < maxRetries) {
+          retryCount++;
+          setTimeout(checkAppUpdate, 2000 * retryCount);
+        }
       }
     };
     
@@ -139,6 +152,17 @@ function Navigation() {
         <Text style={{ marginTop: 10, color: colors.text }}>
           {isLoading ? 'Loading translations...' : 'Loading...'}
         </Text>
+        {/* Force Update Modal must render even during loading */}
+        <ForceUpdateModal
+          visible={showUpdateModal}
+          forceUpdate={updateInfo?.forceUpdate || false}
+          currentVersion={updateInfo?.currentVersion}
+          latestVersion={updateInfo?.latestVersion}
+          updateMessage={updateInfo?.updateMessage}
+          updateMessageTr={updateInfo?.updateMessageTr}
+          onUpdate={handleUpdate}
+          onSkip={handleSkipUpdate}
+        />
       </View>
     );
   }

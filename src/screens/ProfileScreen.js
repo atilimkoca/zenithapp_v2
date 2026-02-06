@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { colors } from '../constants/colors';
@@ -986,7 +987,7 @@ export default function ProfileScreen({ navigation }) {
             <Text style={styles.modernLogoutText}>{t('auth.logoutButton')}</Text>
           </TouchableOpacity>
           
-          <Text style={styles.versionText}>Version 1.0.4 • Zenith Studio</Text>
+          <Text style={styles.versionText}>Version {Constants.expoConfig?.version || '1.0.0'} • Zenith Studio</Text>
         </View>
       </ScrollView>
 

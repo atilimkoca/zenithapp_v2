@@ -4,7 +4,7 @@ export default ({ config }) => ({
   ...config,
   name: 'Zenith Studio',
   slug: config.slug || 'zenith-studio',
-  version: '1.0.5',
+  version: '1.0.6',
   orientation: 'portrait',
   icon: './assets/app_icon.jpeg',
   userInterfaceStyle: 'light',
@@ -19,7 +19,7 @@ export default ({ config }) => ({
   ios: {
     ...config.ios,
     bundleIdentifier: 'com.zenithstudio.app',
-    buildNumber: '9',
+    buildNumber: '10',
     supportsTablet: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -78,7 +78,7 @@ export default ({ config }) => ({
   android: {
     ...config.android,
     package: 'com.zenithstudio.app',
-    versionCode: 10,
+    versionCode: 11,
     jsEngine: 'hermes',
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',

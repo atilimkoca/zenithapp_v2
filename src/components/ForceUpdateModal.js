@@ -24,7 +24,28 @@ const ForceUpdateModal = ({
   onUpdate,
   onSkip,
 }) => {
-  const { t, language } = useI18n();
+  // Safely get translations - may not be available during loading
+  let t, language;
+  try {
+    const i18n = useI18n();
+    t = i18n.t;
+    language = i18n.language;
+  } catch (e) {
+    // Fallback if I18n not ready
+    t = (key) => {
+      const fallback = {
+        'update.title': 'Güncelleme Mevcut',
+        'update.currentVersion': 'Mevcut',
+        'update.newVersion': 'Yeni',
+        'update.defaultMessage': 'Yeni bir sürüm mevcut. Lütfen güncelleyin.',
+        'update.forceUpdateWarning': 'Uygulamayı kullanmaya devam etmek için bu güncelleme zorunludur.',
+        'update.updateNow': 'Şimdi Güncelle',
+        'update.later': 'Daha Sonra',
+      };
+      return fallback[key] || key;
+    };
+    language = 'tr';
+  }
   
   // Get localized message
   const message = language === 'tr' ? (updateMessageTr || updateMessage) : updateMessage;
@@ -35,6 +56,12 @@ const ForceUpdateModal = ({
       transparent
       animationType="fade"
       statusBarTranslucent
+      onRequestClose={() => {
+        // Prevent closing with Android back button when force update is required
+        if (!forceUpdate && onSkip) {
+          onSkip();
+        }
+      }}
     >
       <View style={styles.overlay}>
         <View style={styles.container}>
@@ -98,7 +125,7 @@ const ForceUpdateModal = ({
           {/* Store Badge */}
           <View style={styles.storeContainer}>
             <Text style={styles.storeText}>
-              {Platform.OS === 'ios' ? '🍎 App Store' : '🤖 Google Play'}
+              {Platform.OS === 'ios' ? 'App Store' : 'Google Play'}
             </Text>
           </View>
         </View>
