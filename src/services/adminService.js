@@ -1255,7 +1255,12 @@ export const adminService = {
         return { success: false, error: 'Pakette kalan ders yok' };
       }
 
-      const packages = userData.packages || [];
+      // FIXED: Use packagesResult.packages (which includes migrated legacy packages)
+      // instead of userData.packages which may be empty for legacy users.
+      // Previously, if packages[] was empty but packageInfo existed, getUserPackages()
+      // created a virtual legacy package in memory, but then we mapped over the
+      // empty userData.packages array — resulting in totalRemainingClasses = 0.
+      const packages = packagesResult.packages;
 
       // Update the specific package
       const updatedPackages = packages.map(pkg => {
@@ -1449,13 +1454,14 @@ export const adminService = {
       return null;
     }
 
-    // Get totalLessons from packageInfo - look for various field names
-    const totalLessons = packageInfo.totalLessons || 
+    // Get totalLessons - FIXED: check root-level totalLessons/totalClasses BEFORE packageInfo.lessonCount
+    // because lessonCount may have been incorrectly set to remaining by migration
+    const totalLessons = userData.totalLessons ||
+                         userData.totalClasses ||
+                         packageInfo.totalLessons || 
                          packageInfo.lessonCount || 
                          packageInfo.classes || 
                          packageInfo.sessions ||
-                         userData.totalLessons ||
-                         userData.totalClasses ||
                          remainingClasses; // Only fallback to remaining if nothing else available
 
     return {
@@ -1522,11 +1528,23 @@ export const adminService = {
           updatedAt: new Date().toISOString()
         };
         
+        // FIXED: Also sync packageInfo.remainingClasses for legacy users
+        // Without this, the next read from packageInfo would return stale values
+        if (userData.packageInfo) {
+          updateData['packageInfo.remainingClasses'] = newRemainingLessons;
+        }
+        
         if (newStartDate) {
           updateData.packageStartDate = newStartDate;
+          if (userData.packageInfo) {
+            updateData['packageInfo.assignedAt'] = newStartDate;
+          }
         }
         if (newExpiryDate) {
           updateData.packageExpiryDate = newExpiryDate;
+          if (userData.packageInfo) {
+            updateData['packageInfo.expiryDate'] = newExpiryDate;
+          }
         }
         
         await updateDoc(userRef, updateData);
@@ -1707,12 +1725,21 @@ export const adminService = {
       if (!userData.packageInfo || userData.packageInfo.remainingClasses === undefined ||
           (correctPackageName && userData.packageInfo.packageName !== correctPackageName)) {
         needsUpdate = true;
+        // FIXED: Use totalLessons/totalClasses for lessonCount instead of falling back to actualRemaining
+        // actualRemaining is the CURRENT credits, not the original total
+        // Check root-level totals BEFORE packageInfo.lessonCount since lessonCount
+        // may have been incorrectly set to remaining by a previous migration
+        const correctLessonCount = activePackage?.totalLessons ||
+          userData.totalLessons ||
+          userData.totalClasses ||
+          userData.packageInfo?.lessonCount ||
+          actualRemaining;
         updateData.packageInfo = {
           ...(userData.packageInfo || {}),
           packageId: realPackageId || activePackage?.packageId || userData.packageInfo?.packageId || `migrated_${Date.now()}`,
           packageName: correctPackageName,
           packageType: correctPackageType,
-          lessonCount: userData.packageInfo?.lessonCount || actualRemaining,
+          lessonCount: correctLessonCount,
           remainingClasses: actualRemaining,
           assignedAt: activePackage?.assignedAt || userData.packageInfo?.assignedAt || userData.packageStartDate || userData.approvedAt || new Date().toISOString(),
           expiryDate: correctExpiryDate || new Date().toISOString()

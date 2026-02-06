@@ -162,7 +162,7 @@ export default function AdminUserDetailScreen({ route, navigation }) {
       packageStartDate: user?.packageStartDate ?? null,
       packageName: user?.packageName ?? user?.packageInfo?.packageName ?? null,
       packageType: user?.packageType ?? user?.packageInfo?.packageType ?? null,
-      totalLessons: user?.totalLessons ?? user?.packageInfo?.totalLessons ?? user?.packageInfo?.lessonCount ?? null,
+      totalLessons: user?.totalLessons ?? user?.totalClasses ?? user?.packageInfo?.totalLessons ?? user?.packageInfo?.lessonCount ?? null,
     });
   };
 

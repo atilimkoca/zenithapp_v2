@@ -145,21 +145,11 @@ export const lessonCreditsService = {
         };
       }
       
-      const newCredits = currentCredits - 1;
-      
-      // Update all credit-related fields including packageInfo
+      // Update the correct package in packages array based on lesson date
       const updateData = {
-        remainingClasses: newCredits,
-        lessonCredits: newCredits,
         updatedAt: new Date().toISOString()
       };
-      
-      // Also update packageInfo.remainingClasses if packageInfo exists
-      if (userData.packageInfo) {
-        updateData['packageInfo.remainingClasses'] = newCredits;
-      }
-      
-      // Update the correct package in packages array based on lesson date
+
       if (userData.packages && userData.packages.length > 0) {
         const lessonDateTime = lessonDate ? new Date(lessonDate) : new Date();
         const packages = [...userData.packages];
@@ -191,6 +181,32 @@ export const lessonCreditsService = {
             };
             updateData.packages = packages;
           }
+        }
+        
+        // FIXED: Recalculate total from packages instead of simple -1 from root
+        // This keeps root-level fields in sync with the packages array
+        const updatedPkgs = updateData.packages || packages;
+        const newCredits = updatedPkgs.reduce((sum, pkg) => {
+          if (pkg.status !== 'cancelled') {
+            return sum + (pkg.remainingLessons || 0);
+          }
+          return sum;
+        }, 0);
+        
+        updateData.remainingClasses = newCredits;
+        updateData.lessonCredits = newCredits;
+        
+        if (userData.packageInfo) {
+          updateData['packageInfo.remainingClasses'] = newCredits;
+        }
+      } else {
+        // No packages array - simple deduction from root level
+        const newCredits = currentCredits - 1;
+        updateData.remainingClasses = newCredits;
+        updateData.lessonCredits = newCredits;
+        
+        if (userData.packageInfo) {
+          updateData['packageInfo.remainingClasses'] = newCredits;
         }
       }
       

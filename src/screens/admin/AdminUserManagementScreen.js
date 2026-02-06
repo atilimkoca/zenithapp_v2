@@ -59,7 +59,7 @@ const UserListItem = ({ user, onPress }) => {
     return user?.remainingClasses ?? user?.lessonCredits ?? 0;
   };
   
-  // Get total lessons - check packages array first, then packageInfo, then root level
+  // Get total lessons - check packages array first, then root level totals, then packageInfo
   const getTotal = () => {
     const packages = user?.packages || [];
     if (packages.length > 0) {
@@ -70,14 +70,18 @@ const UserListItem = ({ user, onPress }) => {
         return sum;
       }, 0);
     }
-    // Check packageInfo for various field names
+    // FIXED: Check root-level totalClasses/totalLessons FIRST since they are more reliable
+    // than packageInfo.lessonCount which may have been set incorrectly by migration
+    if (user?.totalLessons) return user.totalLessons;
+    if (user?.totalClasses) return user.totalClasses;
+    // Then check packageInfo for various field names
     const pkgInfo = user?.packageInfo;
     if (pkgInfo) {
       const total = pkgInfo.totalLessons || pkgInfo.lessonCount || pkgInfo.classes || pkgInfo.sessions;
       if (total) return total;
     }
-    // Check root level
-    return user?.totalLessons || user?.totalClasses || getRemaining();
+    // Final fallback
+    return getRemaining();
   };
   
   const remainingClasses = getRemaining();

@@ -157,13 +157,14 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
 
     // Fallback: create packageInfo from root-level fields if user has remaining classes
     const credits = remainingClasses ?? lessonCredits ?? 0;
+    const totalFromParams = route.params?.totalLessons;
     if (isApproved && credits > 0) {
       return {
         packageId: 'legacy_package',
         packageName: route.params?.packageName || 'Mevcut Paket',
         packageType: route.params?.packageType || 'group',
-        totalLessons: route.params?.totalLessons || credits, // Use totalLessons if available, fallback to credits
-        lessonCount: route.params?.totalLessons || credits,
+        totalLessons: totalFromParams || credits, // Use totalLessons if available, fallback to credits
+        lessonCount: totalFromParams || credits,
         remainingClasses: credits,
         assignedAt: packageStartDate || null,
         expiryDate: packageExpiryDate || null,
