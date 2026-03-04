@@ -502,8 +502,10 @@ export default function ClassSelectionScreen() {
 
     if (userPackages.length > 0) {
       // Use multi-package system - filter valid packages and create date ranges
+      const classNow = new Date();
       packageDateRanges = userPackages
-        .filter(pkg => pkg.status !== 'cancelled' && pkg.remainingLessons > 0)
+        .filter(pkg => pkg.status !== 'cancelled' && pkg.remainingLessons > 0 &&
+          !(pkg.expiryDate && new Date(pkg.expiryDate) < classNow))
         .map(pkg => {
           const start = new Date(pkg.startDate);
           const end = new Date(pkg.expiryDate);

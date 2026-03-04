@@ -46,11 +46,12 @@ const UserListItem = ({ user, onPress }) => {
   const getRemaining = () => {
     const packages = user?.packages || [];
     if (packages.length > 0) {
+      const now = new Date();
       return packages.reduce((sum, pkg) => {
-        if (pkg.status !== 'cancelled') {
-          return sum + (pkg.remainingLessons || 0);
-        }
-        return sum;
+        if (pkg.status === 'cancelled') return sum;
+        // Exclude expired packages from remaining count
+        if (pkg.expiryDate && new Date(pkg.expiryDate) < now) return sum;
+        return sum + (pkg.remainingLessons || 0);
       }, 0);
     }
     if (user?.packageInfo?.remainingClasses !== undefined) {
@@ -63,11 +64,12 @@ const UserListItem = ({ user, onPress }) => {
   const getTotal = () => {
     const packages = user?.packages || [];
     if (packages.length > 0) {
+      const now = new Date();
       return packages.reduce((sum, pkg) => {
-        if (pkg.status !== 'cancelled') {
-          return sum + (pkg.totalLessons || 0);
-        }
-        return sum;
+        if (pkg.status === 'cancelled') return sum;
+        // Exclude expired packages from total count
+        if (pkg.expiryDate && new Date(pkg.expiryDate) < now) return sum;
+        return sum + (pkg.totalLessons || 0);
       }, 0);
     }
     // FIXED: Check root-level totalClasses/totalLessons FIRST since they are more reliable

@@ -201,11 +201,11 @@ export const adminService = {
       existingPackages.push(newPackage);
 
       // Calculate total remaining from all packages
+      const calcNow = new Date();
       const totalRemainingClasses = existingPackages.reduce((sum, pkg) => {
-        if (pkg.status !== 'cancelled') {
-          return sum + (pkg.remainingLessons || 0);
-        }
-        return sum;
+        if (pkg.status === 'cancelled') return sum;
+        if (pkg.expiryDate && new Date(pkg.expiryDate) < calcNow) return sum;
+        return sum + (pkg.remainingLessons || 0);
       }, 0);
 
       // Find the latest expiry date
@@ -1017,13 +1017,12 @@ export const adminService = {
       // Add new package
       existingPackages.push(newPackage);
 
-      // Calculate total remaining lessons across ALL non-cancelled packages
-      // FIXED: Include all packages regardless of date to show accurate total credits
+      // Calculate total remaining lessons across ALL non-cancelled, non-expired packages
+      const calcNow3 = new Date();
       const totalRemainingClasses = existingPackages.reduce((sum, pkg) => {
-        if (pkg.status !== 'cancelled') {
-          return sum + (pkg.remainingLessons || 0);
-        }
-        return sum;
+        if (pkg.status === 'cancelled') return sum;
+        if (pkg.expiryDate && new Date(pkg.expiryDate) < calcNow3) return sum;
+        return sum + (pkg.remainingLessons || 0);
       }, 0);
 
       // Find the latest expiry date among active packages
@@ -1275,12 +1274,12 @@ export const adminService = {
         return pkg;
       });
 
-      // Calculate new total remaining from ALL non-cancelled packages
+      // Calculate new total remaining from ALL non-cancelled, non-expired packages
+      const calcNow4 = new Date();
       const totalRemainingClasses = updatedPackages.reduce((sum, pkg) => {
-        if (pkg.status !== 'cancelled') {
-          return sum + (pkg.remainingLessons || 0);
-        }
-        return sum;
+        if (pkg.status === 'cancelled') return sum;
+        if (pkg.expiryDate && new Date(pkg.expiryDate) < calcNow4) return sum;
+        return sum + (pkg.remainingLessons || 0);
       }, 0);
 
       // Build update data including packageInfo sync
@@ -1395,13 +1394,12 @@ export const adminService = {
         return pkg;
       });
 
-      // Calculate new total remaining from ALL non-cancelled packages (not just active date range)
-      // FIXED: Include all packages regardless of date to show accurate total credits
+      // Calculate new total remaining from ALL non-cancelled, non-expired packages
+      const calcNow5 = new Date();
       const totalRemainingClasses = updatedPackages.reduce((sum, pkg) => {
-        if (pkg.status !== 'cancelled') {
-          return sum + (pkg.remainingLessons || 0);
-        }
-        return sum;
+        if (pkg.status === 'cancelled') return sum;
+        if (pkg.expiryDate && new Date(pkg.expiryDate) < calcNow5) return sum;
+        return sum + (pkg.remainingLessons || 0);
       }, 0);
 
       // Build update data including packageInfo sync
@@ -1573,12 +1571,12 @@ export const adminService = {
         packages[packageIndex].expiryDate = newExpiryDate;
       }
 
-      // Calculate total remaining from all non-cancelled packages
+      // Calculate total remaining from all non-cancelled, non-expired packages
+      const calcNow6 = new Date();
       const totalRemaining = packages.reduce((sum, pkg) => {
-        if (pkg.status !== 'cancelled') {
-          return sum + (pkg.remainingLessons || 0);
-        }
-        return sum;
+        if (pkg.status === 'cancelled') return sum;
+        if (pkg.expiryDate && new Date(pkg.expiryDate) < calcNow6) return sum;
+        return sum + (pkg.remainingLessons || 0);
       }, 0);
 
       // Find the latest expiry date among all packages for root level

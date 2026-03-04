@@ -22,11 +22,12 @@ export const lessonCreditsService = {
       // If user has packages array with items, calculate from packages
       const packages = userData.packages || [];
       if (packages.length > 0) {
+        const now = new Date();
         const calculatedCredits = packages.reduce((sum, pkg) => {
-          if (pkg.status !== 'cancelled') {
-            return sum + (pkg.remainingLessons || 0);
-          }
-          return sum;
+          if (pkg.status === 'cancelled') return sum;
+          // Exclude expired packages - their remaining lessons can't be used
+          if (pkg.expiryDate && new Date(pkg.expiryDate) < now) return sum;
+          return sum + (pkg.remainingLessons || 0);
         }, 0);
 
         return {
@@ -170,9 +171,11 @@ export const lessonCreditsService = {
           };
           updateData.packages = packages;
         } else {
-          // Fallback: find any active package with remaining lessons
+          // Fallback: find any active, non-expired package with remaining lessons
+          const fallbackNow = new Date();
           const fallbackIndex = packages.findIndex(pkg => 
-            pkg.status !== 'cancelled' && pkg.remainingLessons > 0
+            pkg.status !== 'cancelled' && pkg.remainingLessons > 0 &&
+            !(pkg.expiryDate && new Date(pkg.expiryDate) < fallbackNow)
           );
           if (fallbackIndex !== -1) {
             packages[fallbackIndex] = {
@@ -186,11 +189,12 @@ export const lessonCreditsService = {
         // FIXED: Recalculate total from packages instead of simple -1 from root
         // This keeps root-level fields in sync with the packages array
         const updatedPkgs = updateData.packages || packages;
+        const recalcNow = new Date();
         const newCredits = updatedPkgs.reduce((sum, pkg) => {
-          if (pkg.status !== 'cancelled') {
-            return sum + (pkg.remainingLessons || 0);
-          }
-          return sum;
+          if (pkg.status === 'cancelled') return sum;
+          // Exclude expired packages from total
+          if (pkg.expiryDate && new Date(pkg.expiryDate) < recalcNow) return sum;
+          return sum + (pkg.remainingLessons || 0);
         }, 0);
         
         updateData.remainingClasses = newCredits;

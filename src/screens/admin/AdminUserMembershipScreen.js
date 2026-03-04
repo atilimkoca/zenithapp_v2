@@ -361,12 +361,14 @@ export default function AdminUserMembershipScreen({ route, navigation }) {
     let remaining = 0;
     
     if (userPackages.length > 0) {
-      // Sum up from all non-cancelled packages
+      // Sum up from all non-cancelled, non-expired packages
+      const now = new Date();
       userPackages.forEach(pkg => {
-        if (pkg.status !== 'cancelled') {
-          totalLessons += (pkg.totalLessons || 0);
-          remaining += (pkg.remainingLessons || 0);
-        }
+        if (pkg.status === 'cancelled') return;
+        if (pkg.status === 'expired') return;
+        if (pkg.expiryDate && new Date(pkg.expiryDate) < now) return;
+        totalLessons += (pkg.totalLessons || 0);
+        remaining += (pkg.remainingLessons || 0);
       });
     } else {
       // Fallback to effectivePackageInfo

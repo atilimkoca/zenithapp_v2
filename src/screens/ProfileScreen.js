@@ -811,7 +811,7 @@ export default function ProfileScreen({ navigation }) {
               <View style={styles.totalSessionsInfo}>
                 <Text style={styles.totalSessionsLabel}>{t('profile.totalRemainingSessions')}</Text>
                 <Text style={styles.totalSessionsValue}>
-                  {userPackages.reduce((total, pkg) => total + (pkg.remainingLessons || 0), 0)} {t('profile.sessions')}
+                  {userPackages.filter(pkg => pkg.status !== 'expired' && pkg.status !== 'cancelled').reduce((total, pkg) => total + (pkg.remainingLessons || 0), 0)} {t('profile.sessions')}
                 </Text>
               </View>
             </View>
@@ -823,9 +823,9 @@ export default function ProfileScreen({ navigation }) {
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={styles.packagesLoadingText}>{t('loading')}</Text>
             </View>
-          ) : userPackages.length > 0 ? (
+          ) : userPackages.filter(pkg => pkg.status !== 'expired' && pkg.status !== 'cancelled').length > 0 ? (
             <View style={styles.packagesContainer}>
-              {userPackages.map((pkg, index) => {
+              {userPackages.filter(pkg => pkg.status !== 'expired' && pkg.status !== 'cancelled').map((pkg, index) => {
                 const isActive = pkg.status === 'active';
                 const isExpired = pkg.status === 'expired';
                 const isUpcoming = pkg.status === 'upcoming';
