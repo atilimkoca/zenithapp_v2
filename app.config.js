@@ -19,7 +19,7 @@ export default ({ config }) => ({
   ios: {
     ...config.ios,
     bundleIdentifier: 'com.zenithstudio.app',
-    buildNumber: '12',
+    buildNumber: '13',
     supportsTablet: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -78,7 +78,7 @@ export default ({ config }) => ({
   android: {
     ...config.android,
     package: 'com.zenithstudio.app',
-    versionCode: 13,
+    versionCode: 14,
     jsEngine: 'hermes',
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
