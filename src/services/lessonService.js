@@ -578,38 +578,14 @@ const fetchLessonsForSingleDate = async (dateString, forceRefresh = false) => {
       fetchLessonStatus()
     ]);
 
-    // Try direct date query first (fastest - requires scheduledDate stored as string "YYYY-MM-DD")
-    let lessonsSnapshot;
-    let usedDirectQuery = false;
-
-    try {
-      lessonsSnapshot = await getDocs(
-        query(
-          collection(db, 'lessons'),
-          where('status', '==', 'active'),
-          where('scheduledDate', '==', dateString)
-        )
-      );
-
-      // If direct query returns results, use them
-      if (lessonsSnapshot.size > 0) {
-        usedDirectQuery = true;
-        console.log(`⚡ Direct date query: ${lessonsSnapshot.size} lessons for ${dateString}`);
-      } else {
-        // Direct query returned 0 results - might be date format mismatch (ISO vs YYYY-MM-DD)
-        // Fall back to fetching all and filtering client-side
-        console.log(`⚠️ Direct date query returned 0 results for ${dateString}, using client-side filter`);
-        lessonsSnapshot = await getDocs(
-          query(collection(db, 'lessons'), where('status', '==', 'active'))
-        );
-      }
-    } catch (queryError) {
-      // Fallback if composite index doesn't exist or scheduledDate format is different
-      console.warn('⚠️ Direct date query failed, using client-side filter');
-      lessonsSnapshot = await getDocs(
-        query(collection(db, 'lessons'), where('status', '==', 'active'))
-      );
-    }
+    // Always fetch all active lessons and filter client-side by normalized date.
+    // Reason: scheduledDate is stored in mixed formats across docs (ISO string with time
+    // vs plain "YYYY-MM-DD"). A direct `==` query against dateString silently misses
+    // ISO-formatted lessons, which caused students to see only one lesson on some dates.
+    // Client-side filter via normalizeDateValue handles every format consistently.
+    const lessonsSnapshot = await getDocs(
+      query(collection(db, 'lessons'), where('status', '==', 'active'))
+    );
 
     const lessons = [];
 
@@ -617,18 +593,14 @@ const fetchLessonsForSingleDate = async (dateString, forceRefresh = false) => {
       const data = docSnapshot.data();
       if (!data.scheduledDate || !data.startTime || !data.endTime) return;
 
-      // If we used direct query, all docs are for the right date
-      // Otherwise, filter client-side
-      if (!usedDirectQuery) {
-        const lessonDate = normalizeDateValue(data.scheduledDate);
-        if (!lessonDate) return;
+      const lessonDate = normalizeDateValue(data.scheduledDate);
+      if (!lessonDate) return;
 
-        const year = lessonDate.getFullYear();
-        const month = String(lessonDate.getMonth() + 1).padStart(2, '0');
-        const day = String(lessonDate.getDate()).padStart(2, '0');
-        const lessonDateKey = `${year}-${month}-${day}`;
-        if (lessonDateKey !== dateString) return;
-      }
+      const year = lessonDate.getFullYear();
+      const month = String(lessonDate.getMonth() + 1).padStart(2, '0');
+      const day = String(lessonDate.getDate()).padStart(2, '0');
+      const lessonDateKey = `${year}-${month}-${day}`;
+      if (lessonDateKey !== dateString) return;
 
       const processedLesson = processLessonDoc(data, docSnapshot.id, trainersMap, lessonTypes, statusLevels);
       if (processedLesson) {
@@ -1835,6 +1807,10 @@ const adminLessonService = {
       }
       
       // Update the lesson
+      const scheduledDateKey = updatedData.scheduledDate
+        ? formatDateToLocalKey(normalizeDateValue(updatedData.scheduledDate))
+        : undefined;
+
       const fieldsToUpdate = {
         title: updatedData.title,
         description: updatedData.description,
@@ -1843,6 +1819,7 @@ const adminLessonService = {
         maxParticipants: updatedData.maxParticipants ?? updatedData.maxStudents,
         duration: updatedData.duration,
         scheduledDate: updatedData.scheduledDate,
+        scheduledDateKey,
         startTime: updatedData.startTime,
         endTime: updatedData.endTime,
         dayOfWeek: updatedData.dayOfWeek,
@@ -1921,6 +1898,7 @@ const adminLessonService = {
         const duplicatePayload = {
           ...sanitizedBase,
           scheduledDate: duplicateDate.toISOString(),
+          scheduledDateKey: formatDateToLocalKey(duplicateDate),
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         };

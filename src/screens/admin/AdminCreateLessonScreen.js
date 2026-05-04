@@ -223,6 +223,7 @@ export default function AdminCreateLessonScreen({ navigation }) {
       trainerId: selectedTrainer?.id,
       trainerName: selectedTrainer?.name,
       scheduledDate: adjustedDate.toISOString(),
+      scheduledDateKey: `${adjustedDate.getFullYear()}-${String(adjustedDate.getMonth() + 1).padStart(2, '0')}-${String(adjustedDate.getDate()).padStart(2, '0')}`,
       startTime: formatTimeForSave(adjustedDate),
       endTime: formatTimeForSave(endDate),
       duration: durationValue,

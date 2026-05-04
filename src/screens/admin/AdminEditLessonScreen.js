@@ -253,6 +253,7 @@ export default function AdminEditLessonScreen({ navigation, route }) {
       maxParticipants: capacityValue,
       duration: durationValue,
       scheduledDate: baseDate.toISOString(),
+      scheduledDateKey: `${baseDate.getFullYear()}-${String(baseDate.getMonth() + 1).padStart(2, '0')}-${String(baseDate.getDate()).padStart(2, '0')}`,
       startTime: formatTimeForSave(baseDate),
       endTime: formatTimeForSave(endDate),
       dayOfWeek: selectedDay,
