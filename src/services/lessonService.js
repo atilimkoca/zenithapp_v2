@@ -2069,10 +2069,27 @@ const adminLessonService = {
 
       const lessonData = lessonDoc.data();
 
-      // Check if package has expired for this lesson date
-      const packageExpiryDate = userData.packageExpiryDate || userData.packageInfo?.expiryDate;
-      if (packageExpiryDate && lessonData.scheduledDate) {
-        const expiryDate = new Date(packageExpiryDate);
+      // Check if package has expired for this lesson date.
+      // packages[] is the source of truth — use the latest non-cancelled package
+      // expiry and fall back to the cached packageExpiryDate only when no packages
+      // exist. This keeps admin-add consistent with the member's self-booking path
+      // (canBookLessonOnDate) and avoids blocking when the cache has drifted.
+      let effectiveExpiry = null;
+      if (Array.isArray(userData.packages) && userData.packages.length > 0) {
+        effectiveExpiry = userData.packages.reduce((latest, pkg) => {
+          if (pkg.status === 'cancelled' || !pkg.expiryDate) return latest;
+          const exp = new Date(pkg.expiryDate);
+          if (Number.isNaN(exp.getTime())) return latest;
+          return (!latest || exp > latest) ? exp : latest;
+        }, null);
+      }
+      if (!effectiveExpiry) {
+        const fallbackExpiry = userData.packageExpiryDate || userData.packageInfo?.expiryDate;
+        effectiveExpiry = fallbackExpiry ? new Date(fallbackExpiry) : null;
+      }
+
+      if (effectiveExpiry && !Number.isNaN(effectiveExpiry.getTime()) && lessonData.scheduledDate) {
+        const expiryDate = new Date(effectiveExpiry);
         expiryDate.setHours(23, 59, 59, 999);
 
         let lessonDate;
