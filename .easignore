@@ -97,3 +97,6 @@ Thumbs.db
 # Log files
 *.log
 logs/
+
+# Local build artifacts
+builds/

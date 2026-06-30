@@ -97,6 +97,9 @@ Thumbs.db
 # Log files
 *.log
 logs/
+
+# Local build artifacts
+builds/
 # Native folders (using Prebuild)
 /ios
 /android

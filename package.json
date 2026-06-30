@@ -7,7 +7,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "build:ios": "mkdir -p builds && export PATH=\"$HOME/.local/bin:$HOME/.gem/ruby/2.6.0/bin:$PATH\" && export RUBYOPT=\"-rlogger ${RUBYOPT:-}\" && NODE_ENV=production npx --yes eas-cli build --platform ios --profile production --local --output ./builds/zenithstudio-v$npm_package_version.ipa",
+    "build:ios": "if [ -z \"${DEVELOPER_DIR:-}\" ] && [ ! -d /Applications/Xcode.app/Contents/Developer ]; then echo \"Public Xcode.app is required for App Store submission. Install Xcode 26.6+ or use npm run build:ios:cloud.\"; exit 1; fi; mkdir -p builds && export DEVELOPER_DIR=\"${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}\" && export PATH=\"$HOME/.local/bin:$HOME/.gem/ruby/2.6.0/bin:$PATH\" && export RUBYOPT=\"-rlogger ${RUBYOPT:-}\" && NODE_ENV=production npx --yes eas-cli build --platform ios --profile production --local --output ./builds/zenithstudio-v$npm_package_version.ipa",
+    "build:ios:cloud": "NODE_ENV=production npx --yes eas-cli build --platform ios --profile production",
     "build:android": "mkdir -p builds && export JAVA_HOME=\"${JAVA_HOME:-$HOME/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home}\" && export ANDROID_HOME=\"${ANDROID_HOME:-$HOME/Library/Android/sdk}\" && export ANDROID_SDK_ROOT=\"$ANDROID_HOME\" && export ANDROID_NDK_HOME=\"${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/27.1.12297006}\" && export PATH=\"$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH\" && NODE_ENV=production npx --yes eas-cli build --platform android --profile production --local --output ./builds/zenithstudio-v$npm_package_version.aab",
     "build:all": "npm run build:android && npm run build:ios"
   },
@@ -19,6 +20,7 @@
     "@react-navigation/stack": "^7.4.8",
     "expo": "~54.0.35",
     "expo-blur": "~15.0.8",
+    "expo-build-properties": "~1.0.10",
     "expo-constants": "~18.0.12",
     "expo-dev-client": "~6.0.21",
     "expo-device": "~8.0.10",

@@ -23,7 +23,7 @@ export default ({ config }) => ({
   ios: {
     ...config.ios,
     bundleIdentifier: 'com.zenithstudio.app',
-    buildNumber: '14',
+    buildNumber: '15',
     supportsTablet: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -101,7 +101,21 @@ export default ({ config }) => ({
   plugins: [
     "expo-localization",
     "@react-native-community/datetimepicker",
-    "react-native-localize"
+    "react-native-localize",
+    [
+      "expo-build-properties",
+      {
+        ios: {
+          deploymentTarget: "15.1"
+        }
+      }
+    ],
+    [
+      "./plugins/with-ios-pods-deployment-target",
+      {
+        deploymentTarget: "15.1"
+      }
+    ]
   ],
   extra: {
     ...config.extra,
