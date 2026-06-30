@@ -1,10 +1,14 @@
 import 'dotenv/config';
+import fs from 'node:fs';
+
+const googleServicesFile = process.env.GOOGLE_SERVICES_JSON || './google-services.json';
+const hasGoogleServicesFile = fs.existsSync(googleServicesFile);
 
 export default ({ config }) => ({
   ...config,
   name: 'Zenith Studio',
   slug: config.slug || 'zenith-studio',
-  version: '1.0.8',
+  version: '1.0.9',
   orientation: 'portrait',
   icon: './assets/app_icon.jpeg',
   userInterfaceStyle: 'light',
@@ -19,7 +23,7 @@ export default ({ config }) => ({
   ios: {
     ...config.ios,
     bundleIdentifier: 'com.zenithstudio.app',
-    buildNumber: '13',
+    buildNumber: '14',
     supportsTablet: true,
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
@@ -78,7 +82,7 @@ export default ({ config }) => ({
   android: {
     ...config.android,
     package: 'com.zenithstudio.app',
-    versionCode: 14,
+    versionCode: 15,
     jsEngine: 'hermes',
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
@@ -92,7 +96,7 @@ export default ({ config }) => ({
       "android.permission.WRITE_EXTERNAL_STORAGE",
       "android.permission.CAMERA"
     ],
-    googleServicesFile: process.env.GOOGLE_SERVICES_JSON || './google-services.json'
+    ...(hasGoogleServicesFile ? { googleServicesFile } : {})
   },
   plugins: [
     "expo-localization",

@@ -62,6 +62,65 @@ export const lessonCreditsService = {
     }
   },
 
+  // Get remaining lessons of the user's CURRENT active package only
+  // ("the package of the month"). Unlike getUserCredits, this does NOT sum
+  // across multiple packages — it returns the most recent active package's
+  // remaining lessons, or 0 if no package is currently active.
+  getActivePackageCredits: async (userId) => {
+    try {
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+
+      if (!userDoc.exists()) {
+        return { success: false, message: 'Kullanıcı bulunamadı.', credits: 0, package: null };
+      }
+
+      const userData = userDoc.data();
+      const packages = userData.packages || [];
+      const now = new Date();
+
+      // Compute current status for each package (same rules as adminService.getUserPackages)
+      const active = packages
+        .map((pkg) => {
+          const expiryDate = new Date(pkg.expiryDate);
+          const startDate = new Date(pkg.startDate);
+          let status = pkg.status;
+          if (pkg.status === 'cancelled') {
+            status = 'cancelled';
+          } else if (expiryDate < now) {
+            status = 'expired';
+          } else if (startDate > now) {
+            status = 'upcoming';
+          } else if ((pkg.remainingLessons || 0) <= 0) {
+            status = 'depleted';
+          } else {
+            status = 'active';
+          }
+          return { ...pkg, status };
+        })
+        .filter((pkg) => pkg.status === 'active')
+        // Most recent active package first
+        .sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+
+      const current = active[0] || null;
+
+      return {
+        success: true,
+        credits: current ? (current.remainingLessons || 0) : 0,
+        package: current,
+      };
+    } catch (error) {
+      console.error('❌ Error getting active package credits:', error);
+      return {
+        success: false,
+        error: error.code,
+        message: 'Aktif paket bilgisi alınırken hata oluştu.',
+        credits: 0,
+        package: null,
+      };
+    }
+  },
+
   // Set user's lesson credits (for admin/initial setup)
   setUserCredits: async (userId, credits, reason = 'Ders paketi satın alma') => {
     try {

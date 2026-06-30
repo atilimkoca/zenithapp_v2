@@ -19,6 +19,9 @@ import { adminService } from '../../services/adminService';
 import UniqueHeader from '../../components/UniqueHeader';
 import BottomSheetModal from '../../components/BottomSheetModal';
 import NotificationScreen from '../NotificationScreen';
+import RecipientSelector from '../../components/RecipientSelector';
+import { manualNotificationService } from '../../services/manualNotificationService';
+import { resolveRecipients } from '../../utils/recipientResolver';
 
 const { width } = Dimensions.get('window');
 
@@ -45,6 +48,8 @@ export default function AdminDashboardScreen({ navigation }) {
   const [notificationSending, setNotificationSending] = useState(false);
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [showRecipientsDropdown, setShowRecipientsDropdown] = useState(false);
+  const [recipientSpec, setRecipientSpec] = useState({ mode: 'all' });
+  const [audience, setAudience] = useState([]);
 
   const notificationTypes = [
     { value: 'Bilgi', color: '#2196F3', description: 'Genel bilgilendirme' },
@@ -115,8 +120,12 @@ export default function AdminDashboardScreen({ navigation }) {
   };
 
   // Open modal with slide-up animation
-  const openNotificationModal = () => {
+  const openNotificationModal = async () => {
     setCreateNotificationModalVisible(true);
+    setRecipientSpec({ mode: 'all' });
+    // Load the audience for segment/individual targeting + live counts.
+    const res = await manualNotificationService.getAudience();
+    if (res.success) setAudience(res.users);
   };
 
   // Close modal with slide-down animation
@@ -128,6 +137,7 @@ export default function AdminDashboardScreen({ navigation }) {
     setNotificationMessage('');
     setNotificationType('Bilgi');
     setNotificationRecipients('Tüm Üyeler');
+    setRecipientSpec({ mode: 'all' });
   };
 
   const getTypeColor = (type) => {
@@ -162,31 +172,33 @@ export default function AdminDashboardScreen({ navigation }) {
       return;
     }
 
+    // Block sending to an empty audience.
+    const preview = resolveRecipients(recipientSpec, audience);
+    if (recipientSpec.mode !== 'all' && preview.count === 0) {
+      Alert.alert('Alıcı yok', 'Bu kritere uyan kullanıcı yok. Hedeflemeyi değiştir.');
+      return;
+    }
+
     try {
       setNotificationSending(true);
-      
-      const notificationData = {
+
+      const typeMap = { Bilgi: 'general', Uyarı: 'general', Acil: 'urgent', Duyuru: 'announcement' };
+      const content = {
         title: notificationTitle.trim(),
-        message: notificationMessage.trim(), // Changed from 'body' to 'message'
-        type: notificationType,
+        message: notificationMessage.trim(),
+        type: typeMap[notificationType] || 'general',
         priority: notificationType === 'Acil' ? 'high' : 'normal',
-        targetAudience: notificationRecipients,
-        timestamp: new Date().toISOString(),
-        createdBy: userData?.displayName || 'Admin',
-        status: 'sent'
       };
 
-      console.log('Sending notification with data:', notificationData);
+      const result = await manualNotificationService.send(recipientSpec, content, audience);
 
-      // Import the notification utils at the top and use them here
-      const { adminNotificationUtils } = require('../../utils/adminNotificationUtils');
-      const result = await adminNotificationUtils.sendBroadcastNotification(notificationData);
-      
       if (result.success) {
         closeNotificationModal();
         Alert.alert(
           'Başarılı',
-          `Bildirim ${notificationRecipients.toLowerCase()} kullanıcılara gönderildi.`
+          recipientSpec.mode === 'all'
+            ? 'Bildirim tüm üyelere gönderildi.'
+            : result.message || `${result.count} kişiye gönderildi.`
         );
       } else {
         console.error('Notification send failed:', result.message);
@@ -347,6 +359,14 @@ export default function AdminDashboardScreen({ navigation }) {
               />
 
               <ActionCard
+                title="Otomatik"
+                description="Bildirimler"
+                icon="alarm"
+                color="#45B7D1"
+                onPress={() => navigation.navigate('AdminAutoNotifications')}
+              />
+
+              <ActionCard
                 title="Çıkış"
                 description="Güvenli"
                 icon="log-out"
@@ -398,7 +418,12 @@ export default function AdminDashboardScreen({ navigation }) {
               {notificationSending ? (
                 <ActivityIndicator size="small" color={colors.white} />
               ) : (
-                <Text style={styles.sendButtonText}>Bildirim Gönder</Text>
+                <Text style={styles.sendButtonText}>
+                  {(() => {
+                    const c = resolveRecipients(recipientSpec, audience).count;
+                    return recipientSpec.mode === 'all' ? 'Bildirim Gönder' : `${c} kişiye gönder`;
+                  })()}
+                </Text>
               )}
             </TouchableOpacity>
           </View>
@@ -481,47 +506,7 @@ export default function AdminDashboardScreen({ navigation }) {
 
           <View style={styles.inputContainer}>
             <Text style={styles.inputLabel}>Alıcılar</Text>
-            <TouchableOpacity
-              style={[styles.selectionButton, showRecipientsDropdown && styles.selectionButtonActive]}
-              onPress={() => {
-                setShowRecipientsDropdown(!showRecipientsDropdown);
-                setShowTypeDropdown(false);
-              }}
-              activeOpacity={0.7}
-            >
-              <Ionicons name={getRecipientIcon(notificationRecipients)} size={20} color="#2196F3" />
-              <Text style={styles.selectionText}>{notificationRecipients}</Text>
-              <Ionicons name={showRecipientsDropdown ? 'chevron-up' : 'chevron-down'} size={20} color="#666" />
-            </TouchableOpacity>
-
-            {showRecipientsDropdown && (
-              <View style={styles.dropdownContainer}>
-                {recipientTypes.map((recipient) => (
-                  <TouchableOpacity
-                    key={`recipients-${recipient.value}`}
-                    style={[styles.dropdownItem, notificationRecipients === recipient.value && styles.dropdownItemSelected]}
-                    onPress={() => {
-                      setNotificationRecipients(recipient.value);
-                      setShowRecipientsDropdown(false);
-                    }}
-                  >
-                    <Ionicons name={recipient.icon} size={20} color="#2196F3" />
-                    <View style={styles.dropdownItemContent}>
-                      <Text
-                        style={[
-                          styles.dropdownItemTitle,
-                          notificationRecipients === recipient.value && styles.dropdownItemTitleSelected,
-                        ]}
-                      >
-                        {recipient.value}
-                      </Text>
-                      <Text style={styles.dropdownItemDescription}>{recipient.description}</Text>
-                    </View>
-                    {notificationRecipients === recipient.value && <Ionicons name="checkmark" size={20} color="#2196F3" />}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
+            <RecipientSelector audience={audience} spec={recipientSpec} onChange={setRecipientSpec} />
           </View>
         </ScrollView>
       </BottomSheetModal>

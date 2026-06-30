@@ -42,6 +42,7 @@ export default function ProfileScreen({ navigation }) {
   const [languageModalVisible, setLanguageModalVisible] = useState(false);
   const [notificationModalVisible, setNotificationModalVisible] = useState(false);
   const [deleteAccountModalVisible, setDeleteAccountModalVisible] = useState(false);
+  const [previousPackagesModalVisible, setPreviousPackagesModalVisible] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [userStats, setUserStats] = useState({
@@ -146,6 +147,97 @@ export default function ProfileScreen({ navigation }) {
     }
   };
 
+  // Packages sorted newest-first by start date (any status)
+  const sortedPackages = [...userPackages].sort(
+    (a, b) => new Date(b.startDate || 0) - new Date(a.startDate || 0)
+  );
+  const recentPackages = sortedPackages.slice(0, 2);
+  const previousPackages = sortedPackages.slice(2);
+
+  // Reusable package card (used both inline and inside the previous-packages modal)
+  const renderPackageCard = (pkg, index) => {
+    const isActive = pkg.status === 'active';
+    const isExpired = pkg.status === 'expired';
+    const isUpcoming = pkg.status === 'upcoming';
+    const isDepleted = pkg.status === 'depleted';
+
+    let statusColor = colors.warning;
+    let statusText = t('profile.packagePending');
+    if (isActive) {
+      statusColor = colors.success;
+      statusText = t('profile.packageActive');
+    } else if (isExpired) {
+      statusColor = colors.error;
+      statusText = t('profile.packageExpired');
+    } else if (isUpcoming) {
+      statusColor = colors.info;
+      statusText = t('profile.packageUpcoming');
+    } else if (isDepleted) {
+      statusColor = colors.textSecondary;
+      statusText = t('profile.packageDepleted');
+    }
+
+    const total = pkg.totalLessons || 0;
+    const remaining = Math.max(0, pkg.remainingLessons || 0);
+    const used = Math.max(0, total - remaining);
+    const progress = total > 0 ? Math.min(1, used / total) : 0;
+
+    return (
+      <View
+        key={pkg.id || index}
+        style={[
+          styles.packageCard,
+          isActive && styles.packageCardActive,
+          (isExpired || isDepleted) && styles.packageCardExpired,
+        ]}
+      >
+        <View style={styles.packageCardHeader}>
+          <View style={styles.packageNameRow}>
+            <Text style={styles.packageName}>{pkg.packageName || t('profile.package')}</Text>
+            <View style={[styles.packageStatusBadge, { backgroundColor: statusColor + '15' }]}>
+              <View style={[styles.packageStatusDot, { backgroundColor: statusColor }]} />
+              <Text style={[styles.packageStatusText, { color: statusColor }]}>{statusText}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.packageCardBody}>
+          <View style={styles.packageInfoRow}>
+            <View style={styles.packageInfoItem}>
+              <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.packageInfoLabel}>{t('profile.startDate')}</Text>
+              <Text style={styles.packageInfoValue}>{formatPackageDate(pkg.startDate)}</Text>
+            </View>
+            <View style={styles.packageInfoItem}>
+              <Ionicons name="calendar" size={16} color={colors.textSecondary} />
+              <Text style={styles.packageInfoLabel}>{t('profile.endDate')}</Text>
+              <Text style={styles.packageInfoValue}>{formatPackageDate(pkg.expiryDate)}</Text>
+            </View>
+          </View>
+
+          {/* Lessons progress */}
+          <View style={styles.packageProgressBlock}>
+            <View style={styles.packageProgressLabels}>
+              <Text style={styles.packageProgressRemaining}>
+                <Text style={[styles.packageProgressRemainingValue, { color: statusColor }]}>{remaining}</Text>
+                {`  ${t('profile.remainingLessons')}`}
+              </Text>
+              <Text style={styles.packageProgressTotal}>{`${used}/${total}`}</Text>
+            </View>
+            <View style={styles.packageProgressTrack}>
+              <View
+                style={[
+                  styles.packageProgressFill,
+                  { width: `${progress * 100}%`, backgroundColor: statusColor },
+                ]}
+              />
+            </View>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   const [profileData, setProfileData] = useState({
     firstName: '',
     lastName: '',
@@ -187,7 +279,8 @@ export default function ProfileScreen({ navigation }) {
     if (!user?.uid) return;
 
     try {
-      const result = await lessonCreditsService.getUserCredits(user.uid);
+      // Show remaining lessons of the CURRENT active package only ("package of the month")
+      const result = await lessonCreditsService.getActivePackageCredits(user.uid);
       if (result.success) {
         setRemainingCredits(result.credits);
       }
@@ -809,86 +902,37 @@ export default function ProfileScreen({ navigation }) {
                 <Ionicons name="ticket" size={28} color={colors.primary} />
               </View>
               <View style={styles.totalSessionsInfo}>
-                <Text style={styles.totalSessionsLabel}>{t('profile.totalRemainingSessions')}</Text>
+                <Text style={styles.totalSessionsLabel}>{t('profile.activePackageRemaining')}</Text>
                 <Text style={styles.totalSessionsValue}>
-                  {userPackages.filter(pkg => pkg.status !== 'expired' && pkg.status !== 'cancelled').reduce((total, pkg) => total + (pkg.remainingLessons || 0), 0)} {t('profile.sessions')}
+                  {remainingCredits} {t('profile.sessions')}
                 </Text>
               </View>
             </View>
           </View>
 
-          {/* Packages List */}
+          {/* Packages List — most recent two; older ones live in the modal */}
           {loadingPackages ? (
             <View style={styles.packagesLoading}>
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={styles.packagesLoadingText}>{t('loading')}</Text>
             </View>
-          ) : userPackages.filter(pkg => pkg.status !== 'expired' && pkg.status !== 'cancelled').length > 0 ? (
+          ) : sortedPackages.length > 0 ? (
             <View style={styles.packagesContainer}>
-              {userPackages.filter(pkg => pkg.status !== 'expired' && pkg.status !== 'cancelled').map((pkg, index) => {
-                const isActive = pkg.status === 'active';
-                const isExpired = pkg.status === 'expired';
-                const isUpcoming = pkg.status === 'upcoming';
-                const isDepleted = pkg.status === 'depleted';
+              {recentPackages.map((pkg, index) => renderPackageCard(pkg, index))}
 
-                let statusColor = colors.warning;
-                let statusText = t('profile.packagePending');
-
-                if (isActive) {
-                  statusColor = colors.success;
-                  statusText = t('profile.packageActive');
-                } else if (isExpired) {
-                  statusColor = colors.error;
-                  statusText = t('profile.packageExpired');
-                } else if (isUpcoming) {
-                  statusColor = colors.info;
-                  statusText = t('profile.packageUpcoming');
-                } else if (isDepleted) {
-                  statusColor = colors.textSecondary;
-                  statusText = t('profile.packageDepleted');
-                }
-
-                return (
-                  <View key={pkg.id || index} style={[styles.packageCard, isExpired && styles.packageCardExpired]}>
-                    <View style={styles.packageCardHeader}>
-                      <View style={styles.packageNameRow}>
-                        <Text style={styles.packageName}>{pkg.packageName || t('profile.package')}</Text>
-                        <View style={[styles.packageStatusBadge, { backgroundColor: statusColor + '15' }]}>
-                          <View style={[styles.packageStatusDot, { backgroundColor: statusColor }]} />
-                          <Text style={[styles.packageStatusText, { color: statusColor }]}>{statusText}</Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <View style={styles.packageCardBody}>
-                      <View style={styles.packageInfoRow}>
-                        <View style={styles.packageInfoItem}>
-                          <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
-                          <Text style={styles.packageInfoLabel}>{t('profile.startDate')}</Text>
-                          <Text style={styles.packageInfoValue}>{formatPackageDate(pkg.startDate)}</Text>
-                        </View>
-                        <View style={styles.packageInfoItem}>
-                          <Ionicons name="calendar" size={16} color={colors.textSecondary} />
-                          <Text style={styles.packageInfoLabel}>{t('profile.endDate')}</Text>
-                          <Text style={styles.packageInfoValue}>{formatPackageDate(pkg.expiryDate)}</Text>
-                        </View>
-                      </View>
-
-                      <View style={styles.packageLessonsRow}>
-                        <View style={styles.packageLessonsItem}>
-                          <Text style={styles.packageLessonsValue}>{pkg.remainingLessons || 0}</Text>
-                          <Text style={styles.packageLessonsLabel}>{t('profile.remainingLessons')}</Text>
-                        </View>
-                        <View style={styles.packageLessonsDivider} />
-                        <View style={styles.packageLessonsItem}>
-                          <Text style={styles.packageLessonsValue}>{pkg.totalLessons || 0}</Text>
-                          <Text style={styles.packageLessonsLabel}>{t('profile.totalLessonsPackage')}</Text>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
+              {previousPackages.length > 0 && (
+                <TouchableOpacity
+                  style={styles.previousPackagesButton}
+                  activeOpacity={0.8}
+                  onPress={() => setPreviousPackagesModalVisible(true)}
+                >
+                  <Ionicons name="time-outline" size={18} color={colors.primary} />
+                  <Text style={styles.previousPackagesButtonText}>
+                    {t('profile.viewPreviousPackages')} ({previousPackages.length})
+                  </Text>
+                  <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             <View style={styles.noPackagesContainer}>
@@ -1266,6 +1310,43 @@ export default function ProfileScreen({ navigation }) {
                   )}
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Previous Packages Modal */}
+      {previousPackagesModalVisible && (
+        <Modal
+          animationType="slide"
+          transparent
+          visible={previousPackagesModalVisible}
+          onRequestClose={() => setPreviousPackagesModalVisible(false)}
+        >
+          <View style={styles.previousModalOverlay}>
+            <TouchableOpacity
+              style={styles.previousModalBackdrop}
+              activeOpacity={1}
+              onPress={() => setPreviousPackagesModalVisible(false)}
+            />
+            <View style={styles.previousModalContent}>
+              <View style={styles.previousModalHandle} />
+              <View style={styles.previousModalHeader}>
+                <Text style={styles.previousModalTitle}>{t('profile.previousPackages')}</Text>
+                <TouchableOpacity
+                  style={styles.previousModalClose}
+                  onPress={() => setPreviousPackagesModalVisible(false)}
+                >
+                  <Ionicons name="close" size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView
+                style={styles.previousModalScroll}
+                contentContainerStyle={styles.previousModalScrollContent}
+                showsVerticalScrollIndicator={false}
+              >
+                {previousPackages.map((pkg, index) => renderPackageCard(pkg, index))}
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -1953,6 +2034,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  packageCardActive: {
+    borderColor: colors.success + '55',
+    borderWidth: 1.5,
+    backgroundColor: colors.success + '08',
+  },
   packageCardExpired: {
     opacity: 0.7,
     backgroundColor: colors.lightGray,
@@ -2034,6 +2120,116 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  // Lessons progress bar
+  packageProgressBlock: {
+    backgroundColor: colors.background,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  packageProgressLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 8,
+  },
+  packageProgressRemaining: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  packageProgressRemainingValue: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  packageProgressTotal: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  packageProgressTrack: {
+    height: 8,
+    borderRadius: 6,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  packageProgressFill: {
+    height: '100%',
+    borderRadius: 6,
+  },
+  // View previous packages button
+  previousPackagesButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 16,
+    backgroundColor: colors.primary + '0F',
+    borderWidth: 1,
+    borderColor: colors.primary + '22',
+    marginTop: 4,
+  },
+  previousPackagesButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.primary,
+  },
+  // Previous packages modal
+  previousModalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  previousModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  previousModalContent: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 10,
+    paddingHorizontal: 20,
+    maxHeight: height * 0.78,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 20,
+  },
+  previousModalHandle: {
+    alignSelf: 'center',
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.border,
+    marginBottom: 12,
+  },
+  previousModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  previousModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.textPrimary,
+  },
+  previousModalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+  },
+  previousModalScroll: {
+    flexGrow: 0,
+  },
+  previousModalScrollContent: {
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
   },
   noPackagesContainer: {
     alignItems: 'center',

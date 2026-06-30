@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
@@ -28,7 +28,13 @@ export const auth = initializeAuth(app, {
   persistence: getReactNativePersistence(AsyncStorage)
 });
 
-// Initialize Cloud Firestore and get a reference to the service
-export const db = getFirestore(app);
+// Initialize Cloud Firestore.
+// Force long-polling: React Native (especially with the New Architecture in
+// Expo 54 / RN 0.81) cannot reliably use Firestore's default WebChannel stream
+// transport, which causes intermittent connection / getDoc failures. Long-polling
+// makes reads/writes reliable on device.
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});
 
 export default app;

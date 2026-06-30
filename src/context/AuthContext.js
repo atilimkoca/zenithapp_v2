@@ -38,16 +38,18 @@ export const AuthProvider = ({ children }) => {
           if (result.success) {
             setUserData(result.userData);
             setApprovalStatus(result.userData.status || 'pending');
+            setUserDataLoaded(true); // Mark user data as loaded
           } else {
-            // User doesn't exist in Firestore - they were likely deleted from admin panel
-            await logoutUser();
-            setUser(null);
-            setUserData(null);
-            setApprovalStatus(null);
-            setUserDataLoaded(false);
-            return;
+            // IMPORTANT: never sign the user out automatically here.
+            // A failed read is almost always a transient network/Firestore error,
+            // not a deleted account. Signing out on a transient failure is exactly
+            // what logged users out on app open. Keep the session intact; the
+            // real-time onSnapshot listener below will populate/refresh user data
+            // (and will explicitly handle a genuinely deleted document) once the
+            // connection recovers.
+            console.warn('Could not load user data on auth state change (keeping session):', result.error || result.message);
+            setUserDataLoaded(true); // Don't block the UI on a transient failure
           }
-          setUserDataLoaded(true); // Mark user data as loaded
         } else {
           // User is signed out
           setUser(null);

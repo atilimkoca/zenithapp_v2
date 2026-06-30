@@ -23,6 +23,7 @@ import AdminEditLessonScreen from './src/screens/admin/AdminEditLessonScreen';
 import AdminAddStudentToLessonScreen from './src/screens/admin/AdminAddStudentToLessonScreen';
 import AdminTrainerManagementScreen from './src/screens/admin/AdminTrainerManagementScreen';
 import AdminNotificationsScreen from './src/screens/admin/AdminNotificationsScreen';
+import AdminAutoNotificationsScreen from './src/screens/admin/AdminAutoNotificationsScreen';
 import AdminSettingsScreen from './src/screens/admin/AdminSettingsScreen';
 import AdminFinanceReportsScreen from './src/screens/admin/AdminFinanceReportsScreen';
 import MainTabNavigator from './src/navigation/MainTabNavigator';
@@ -274,9 +275,16 @@ function Navigation() {
               animationTypeForReplace: 'push',
             }}
           />
-          <Stack.Screen 
-            name="AdminFinanceReports" 
+          <Stack.Screen
+            name="AdminFinanceReports"
             component={AdminFinanceReportsScreen}
+            options={{
+              animationTypeForReplace: 'push',
+            }}
+          />
+          <Stack.Screen
+            name="AdminAutoNotifications"
+            component={AdminAutoNotificationsScreen}
             options={{
               animationTypeForReplace: 'push',
             }}

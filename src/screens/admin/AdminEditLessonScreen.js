@@ -14,7 +14,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { colors } from '../../constants/colors';
+import { db } from '../../config/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useI18n } from '../../context/I18nContext';
 import { adminLessonService } from '../../services/lessonService';
@@ -30,6 +32,16 @@ const LESSON_TYPES = [
   'Vinyasa',
   'Hatha Yoga',
 ];
+
+const DURATION_OPTIONS = [45, 50, 60, 75, 90];
+
+// Studio operating window used by the day rail (06:00 – 22:00).
+const DAY_START_MINUTES = 6 * 60;
+const DAY_END_MINUTES = 22 * 60;
+const DAY_SPAN_MINUTES = DAY_END_MINUTES - DAY_START_MINUTES;
+const MAX_MAT_DOTS = 30;
+
+const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
 const WEEKDAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
@@ -192,6 +204,13 @@ export default function AdminEditLessonScreen({ navigation, route }) {
   }, [lesson.type]);
   
   const [loading, setLoading] = useState(false);
+  const [loadingTrainers, setLoadingTrainers] = useState(true);
+  const [trainers, setTrainers] = useState([]);
+  const [selectedTrainer, setSelectedTrainer] = useState(
+    lesson.trainerId
+      ? { id: lesson.trainerId, name: lesson.trainerName || lesson.instructor || '' }
+      : null
+  );
   const [title, setTitle] = useState(lesson.title || '');
   const [description, setDescription] = useState(lesson.description || '');
   const [type, setType] = useState(lesson.type || '');
@@ -212,10 +231,89 @@ export default function AdminEditLessonScreen({ navigation, route }) {
       : lesson.maxStudents || lesson.maxParticipants || 0;
   const endTimePreview = getEndTimePreview(scheduledDate, duration);
   const availableSlots = maxCapacity > 0 ? Math.max(0, maxCapacity - participantsCount) : null;
+  const durationNum = parseInt(duration, 10) || 0;
+  const enrollmentFloor = Math.max(participantsCount, 1);
+
+  // Day-rail geometry: place the lesson block inside the 06:00–22:00 window.
+  const startMinutesOfDay =
+    scheduledDate instanceof Date && !Number.isNaN(scheduledDate.getTime())
+      ? scheduledDate.getHours() * 60 + scheduledDate.getMinutes()
+      : DAY_START_MINUTES;
+  const railLeft = clamp((startMinutesOfDay - DAY_START_MINUTES) / DAY_SPAN_MINUTES, 0, 1);
+  const railWidth = clamp(durationNum / DAY_SPAN_MINUTES, 0.03, 1 - railLeft);
+
+  // Mat occupancy: render one dot per seat, filled up to the enrolled count.
+  const matTotal = clamp(maxCapacity, 0, MAX_MAT_DOTS);
+  const matOverflow = maxCapacity > MAX_MAT_DOTS;
+
+  const adjustMaxStudents = (delta) => {
+    const current = parseInt(maxStudents, 10) || 0;
+    const next = Math.max(enrollmentFloor, current + delta);
+    setMaxStudents(String(next));
+  };
   useEffect(() => {
     setSelectedDay(getDayKeyFromDate(scheduledDate));
   }, [scheduledDate]);
   const weekdayLabel = DAY_LABELS[selectedDay] || 'Bilinmiyor';
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadTrainers = async () => {
+      try {
+        setLoadingTrainers(true);
+        const trainersQuery = query(
+          collection(db, 'users'),
+          where('role', 'in', ['instructor', 'admin'])
+        );
+
+        const snapshot = await getDocs(trainersQuery);
+        const trainersList = [];
+
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          trainersList.push({
+            id: docSnap.id,
+            name:
+              data.displayName ||
+              `${data.firstName || ''} ${data.lastName || ''}`.trim() ||
+              'İsimsiz Eğitmen',
+            ...data,
+          });
+        });
+
+        if (!isMounted) {
+          return;
+        }
+
+        setTrainers(trainersList);
+
+        // Reconcile the lesson's current trainer with the loaded list so the
+        // name/avatar stay accurate even if it changed since the lesson was created.
+        if (lesson.trainerId) {
+          const matched = trainersList.find((t) => t.id === lesson.trainerId);
+          if (matched) {
+            setSelectedTrainer(matched);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading trainers:', error);
+        if (isMounted) {
+          Alert.alert('Hata', 'Eğitmenler yüklenirken hata oluştu');
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingTrainers(false);
+        }
+      }
+    };
+
+    loadTrainers();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [lesson.trainerId]);
 
   const handleSelectDay = (dayKey) => {
     setSelectedDay(dayKey);
@@ -252,6 +350,8 @@ export default function AdminEditLessonScreen({ navigation, route }) {
       maxStudents: capacityValue,
       maxParticipants: capacityValue,
       duration: durationValue,
+      trainerId: selectedTrainer?.id ?? lesson.trainerId,
+      trainerName: selectedTrainer?.name ?? lesson.trainerName,
       scheduledDate: baseDate.toISOString(),
       scheduledDateKey: `${baseDate.getFullYear()}-${String(baseDate.getMonth() + 1).padStart(2, '0')}-${String(baseDate.getDate()).padStart(2, '0')}`,
       startTime: formatTimeForSave(baseDate),
@@ -269,6 +369,10 @@ export default function AdminEditLessonScreen({ navigation, route }) {
     }
     if (!type.trim()) {
       Alert.alert('Hata', 'Lütfen ders türünü girin');
+      return;
+    }
+    if (!selectedTrainer?.id) {
+      Alert.alert('Hata', 'Lütfen eğitmen seçin');
       return;
     }
     if (!maxStudents || parseInt(maxStudents) < 1) {
@@ -404,8 +508,63 @@ export default function AdminEditLessonScreen({ navigation, route }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        {/* Live class-card preview — mirrors how the lesson reads right now */}
+        <View style={styles.previewCard}>
+          <View style={styles.previewTopRow}>
+            <Text style={styles.previewEyebrow}>
+              {(type || 'Ders').toUpperCase()}
+            </Text>
+            <View style={styles.previewBadge}>
+              <Ionicons name="create-outline" size={13} color={colors.white} />
+              <Text style={styles.previewBadgeText}>Düzenleniyor</Text>
+            </View>
+          </View>
+
+          <Text style={styles.previewTitle} numberOfLines={2}>
+            {title.trim() || 'İsimsiz Ders'}
+          </Text>
+
+          <View style={styles.previewInstructorRow}>
+            <View style={styles.previewAvatar}>
+              <Ionicons name="person" size={13} color={colors.primaryDark} />
+            </View>
+            <Text style={styles.previewInstructor}>
+              {selectedTrainer?.name || 'Eğitmen seçilmedi'}
+            </Text>
+          </View>
+
+          <View style={styles.previewDivider} />
+
+          <View style={styles.previewMetaRow}>
+            <View style={styles.previewMeta}>
+              <Ionicons name="calendar-outline" size={14} color="rgba(255,255,255,0.75)" />
+              <Text style={styles.previewMetaText}>{weekdayLabel}</Text>
+            </View>
+            <View style={styles.previewMeta}>
+              <Ionicons name="time-outline" size={14} color="rgba(255,255,255,0.75)" />
+              <Text style={styles.previewMetaText}>
+                {formatDisplayTime(scheduledDate)} – {endTimePreview}
+              </Text>
+            </View>
+            <View style={styles.previewMeta}>
+              <Ionicons name="people-outline" size={14} color="rgba(255,255,255,0.75)" />
+              <Text style={styles.previewMetaText}>
+                {participantsCount}/{maxCapacity || '—'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Ders Bilgileri</Text>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionIconBadge}>
+              <Ionicons name="document-text-outline" size={18} color={colors.primary} />
+            </View>
+            <View style={styles.sectionHeaderText}>
+              <Text style={styles.sectionTitle}>Ders Bilgileri</Text>
+              <Text style={styles.sectionSubtitle}>Başlık, tür ve eğitmen</Text>
+            </View>
+          </View>
           <View style={styles.card}>
             <View style={styles.fieldWrapper}>
               <Text style={styles.fieldLabel}>Ders Başlığı *</Text>
@@ -450,6 +609,60 @@ export default function AdminEditLessonScreen({ navigation, route }) {
               </ScrollView>
             </View>
 
+            <View style={styles.fieldWrapper}>
+              <Text style={styles.fieldLabel}>Eğitmen *</Text>
+              {loadingTrainers ? (
+                <View style={styles.trainerLoadingRow}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.trainerLoadingText}>Eğitmenler yükleniyor...</Text>
+                </View>
+              ) : trainers.length === 0 ? (
+                <View style={styles.trainerEmptyRow}>
+                  <Ionicons name="alert-circle-outline" size={18} color={colors.textSecondary} />
+                  <Text style={styles.trainerLoadingText}>Eğitmen bulunamadı</Text>
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.trainerChipsContainer}
+                >
+                  {trainers.map((trainer) => {
+                    const isActive = selectedTrainer?.id === trainer.id;
+                    return (
+                      <TouchableOpacity
+                        key={trainer.id}
+                        style={[styles.trainerChip, isActive && styles.trainerChipActive]}
+                        onPress={() => setSelectedTrainer(trainer)}
+                        activeOpacity={0.7}
+                      >
+                        <View
+                          style={[
+                            styles.trainerAvatar,
+                            isActive && styles.trainerAvatarActive,
+                          ]}
+                        >
+                          <Ionicons
+                            name="person"
+                            size={14}
+                            color={isActive ? colors.primary : colors.textSecondary}
+                          />
+                        </View>
+                        <Text
+                          style={[
+                            styles.trainerChipText,
+                            isActive && styles.trainerChipTextActive,
+                          ]}
+                        >
+                          {trainer.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+
             <View style={[styles.fieldWrapper, styles.fieldWrapperLast]}>
               <Text style={styles.fieldLabel}>Açıklama</Text>
               <TextInput
@@ -467,7 +680,15 @@ export default function AdminEditLessonScreen({ navigation, route }) {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Program</Text>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionIconBadge}>
+              <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+            </View>
+            <View style={styles.sectionHeaderText}>
+              <Text style={styles.sectionTitle}>Program</Text>
+              <Text style={styles.sectionSubtitle}>Gün, tarih ve saat</Text>
+            </View>
+          </View>
           <View style={styles.card}>
             <View style={styles.daySelector}>
               <Text style={styles.daySelectorLabel}>Ders Günü</Text>
@@ -528,88 +749,184 @@ export default function AdminEditLessonScreen({ navigation, route }) {
               ⏰ Sadece 30 dakikalık aralıklar seçilebilir (06:00, 06:30, 07:00, ...)
             </Text>
 
-            <View style={styles.fieldWrapper}>
+            {/* Day rail — where this class sits in the studio's day */}
+            <View style={styles.railWrap}>
+              <View style={styles.railHeaderRow}>
+                <Text style={styles.railTitle}>Gün İçindeki Yeri</Text>
+                <View style={styles.railTimePill}>
+                  <Text style={styles.railTimePillText}>
+                    {formatDisplayTime(scheduledDate)} – {endTimePreview}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.railTrack}>
+                <View
+                  style={[
+                    styles.railBlock,
+                    { left: `${railLeft * 100}%`, width: `${railWidth * 100}%` },
+                  ]}
+                >
+                  <View style={styles.railBlockDot} />
+                </View>
+              </View>
+              <View style={styles.railScale}>
+                <Text style={styles.railScaleText}>06:00</Text>
+                <Text style={styles.railScaleText}>14:00</Text>
+                <Text style={styles.railScaleText}>22:00</Text>
+              </View>
+            </View>
+
+            <View style={[styles.fieldWrapper, styles.fieldWrapperLast]}>
               <Text style={styles.fieldLabel}>Ders Süresi (Dakika) *</Text>
+              <View style={styles.durationChips}>
+                {DURATION_OPTIONS.map((min) => {
+                  const isActive = durationNum === min;
+                  return (
+                    <TouchableOpacity
+                      key={min}
+                      style={[styles.durChip, isActive && styles.durChipActive]}
+                      onPress={() => setDuration(String(min))}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.durChipText, isActive && styles.durChipTextActive]}>
+                        {min}′
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
               <View style={styles.metaInputWrapper}>
                 <Ionicons name="hourglass-outline" size={18} color={colors.primary} />
                 <TextInput
                   style={styles.metaInput}
                   value={duration}
                   onChangeText={setDuration}
-                  placeholder="Örn: 60"
+                  placeholder="Özel süre"
                   placeholderTextColor={colors.textSecondary}
                   keyboardType="number-pad"
                 />
+                <Text style={styles.metaInputSuffix}>dk</Text>
               </View>
             </View>
-
-            <View style={styles.metaInfoRow}>
-              <View style={styles.metaChip}>
-                <Ionicons name="calendar-outline" size={16} color={colors.primary} />
-                <Text style={styles.metaChipText}>{weekdayLabel}</Text>
-              </View>
-              <View style={styles.metaChip}>
-                <Ionicons name="time-outline" size={16} color={colors.primary} />
-                <Text style={styles.metaChipText}>Bitiş: {endTimePreview}</Text>
-              </View>
-            </View>
-
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Kontenjan</Text>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionIconBadge}>
+              <Ionicons name="people-outline" size={18} color={colors.primary} />
+            </View>
+            <View style={styles.sectionHeaderText}>
+              <Text style={styles.sectionTitle}>Kontenjan</Text>
+              <Text style={styles.sectionSubtitle}>Katılımcı kapasitesi</Text>
+            </View>
+          </View>
           <View style={styles.card}>
             <View style={styles.fieldWrapper}>
               <Text style={styles.fieldLabel}>Maksimum Öğrenci Sayısı *</Text>
-              <View style={styles.metaInputWrapper}>
-                <Ionicons name="people-outline" size={18} color={colors.primary} />
-                <TextInput
-                  style={styles.metaInput}
-                  value={maxStudents}
-                  onChangeText={setMaxStudents}
-                  placeholder="Örn: 15"
-                  placeholderTextColor={colors.textSecondary}
-                  keyboardType="number-pad"
-                />
+              <View style={styles.stepperRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.stepperBtn,
+                    (parseInt(maxStudents, 10) || 0) <= enrollmentFloor && styles.stepperBtnDisabled,
+                  ]}
+                  onPress={() => adjustMaxStudents(-1)}
+                  disabled={(parseInt(maxStudents, 10) || 0) <= enrollmentFloor}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="remove" size={22} color={colors.primary} />
+                </TouchableOpacity>
+
+                <View style={styles.stepperValueWrap}>
+                  <Text style={styles.stepperValue}>{maxStudents || '0'}</Text>
+                  <Text style={styles.stepperUnit}>kişilik kontenjan</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.stepperBtn}
+                  onPress={() => adjustMaxStudents(1)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="add" size={22} color={colors.primary} />
+                </TouchableOpacity>
               </View>
             </View>
 
-            <View style={[styles.infoStrip, styles.fieldWrapperLast]}>
-              <View style={styles.infoStripIcon}>
-                <Ionicons name="information-circle" size={20} color={colors.primary} />
-              </View>
-              <View style={styles.infoStripContent}>
-                <Text style={styles.infoStripTitle}>Mevcut Katılımcı Durumu</Text>
-                <Text style={styles.infoStripText}>
-                  {participantsCount} öğrenci kayıtlı
-                  {availableSlots !== null && ` • ${availableSlots} kontenjan boş`}
-                </Text>
-                <Text style={styles.infoStripNote}>
-                  Maksimum öğrenci sayısını mevcut kayıtlı sayının altına düşüremezsiniz.
+            {/* Mat occupancy — one dot per spot, filled up to the enrolled count */}
+            <View style={[styles.matGauge, styles.fieldWrapperLast]}>
+              <View style={styles.matHeaderRow}>
+                <Text style={styles.matHeaderLabel}>Doluluk</Text>
+                <Text style={styles.matHeaderValue}>
+                  {participantsCount}
+                  <Text style={styles.matHeaderValueDim}> / {maxCapacity || 0}</Text>
                 </Text>
               </View>
+
+              <View style={styles.matDotsRow}>
+                {Array.from({ length: matTotal }).map((_, index) => (
+                  <View
+                    key={index}
+                    style={[
+                      styles.matDot,
+                      index < participantsCount ? styles.matDotFilled : styles.matDotEmpty,
+                    ]}
+                  />
+                ))}
+                {matTotal === 0 && (
+                  <Text style={styles.matEmptyHint}>Kontenjan belirleyin</Text>
+                )}
+                {matOverflow && <Text style={styles.matOverflowHint}>+{maxCapacity - MAX_MAT_DOTS}</Text>}
+              </View>
+
+              <View style={styles.matLegendRow}>
+                <View style={styles.matLegendItem}>
+                  <View style={[styles.matDot, styles.matDotFilled, styles.matLegendDot]} />
+                  <Text style={styles.matLegendText}>{participantsCount} dolu</Text>
+                </View>
+                <View style={styles.matLegendItem}>
+                  <View style={[styles.matDot, styles.matDotEmpty, styles.matLegendDot]} />
+                  <Text style={styles.matLegendText}>
+                    {availableSlots !== null ? availableSlots : 0} boş
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.matNote}>
+                Kontenjanı kayıtlı öğrenci sayısının ({participantsCount}) altına düşüremezsiniz.
+              </Text>
             </View>
           </View>
         </View>
+
+        <View style={{ height: 16 }} />
+      </ScrollView>
+
+      <View style={styles.footerBar}>
+        <TouchableOpacity
+          style={styles.footerCancel}
+          onPress={() => navigation.goBack()}
+          disabled={loading}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.footerCancelText}>Vazgeç</Text>
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.saveButton, loading && styles.saveButtonDisabled]}
           onPress={handleSave}
           disabled={loading}
+          activeOpacity={0.9}
         >
           {loading ? (
             <ActivityIndicator size="small" color={colors.white} />
           ) : (
             <>
               <Ionicons name="checkmark-circle" size={20} color={colors.white} />
-              <Text style={styles.saveButtonText}>Değişiklikleri Kaydet</Text>
+              <Text style={styles.saveButtonText}>Kaydet</Text>
             </>
           )}
         </TouchableOpacity>
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
+      </View>
       <Modal
         visible={Boolean(activePicker)}
         transparent
@@ -728,17 +1045,133 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 20,
-    paddingBottom: 48,
+    paddingBottom: 24,
   },
   section: {
     marginBottom: 24,
   },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  sectionIconBadge: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: `${colors.primary}14`,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  sectionHeaderText: {
+    flex: 1,
+  },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '700',
     color: colors.textPrimary,
-    marginBottom: 12,
-    letterSpacing: -0.2,
+    letterSpacing: -0.3,
+  },
+  sectionSubtitle: {
+    fontSize: 12.5,
+    fontWeight: '500',
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+
+  // Signature: live class-card preview
+  previewCard: {
+    backgroundColor: colors.primaryDark,
+    borderRadius: 24,
+    paddingHorizontal: 22,
+    paddingTop: 20,
+    paddingBottom: 20,
+    marginBottom: 28,
+    shadowColor: colors.primaryDark,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  previewTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  previewEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primaryLight,
+    letterSpacing: 2,
+  },
+  previewBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderRadius: 100,
+    paddingLeft: 8,
+    paddingRight: 11,
+    paddingVertical: 5,
+  },
+  previewBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.white,
+    marginLeft: 4,
+    letterSpacing: 0.2,
+  },
+  previewTitle: {
+    fontSize: 27,
+    fontWeight: '800',
+    color: colors.white,
+    letterSpacing: -0.6,
+    marginTop: 14,
+    lineHeight: 32,
+  },
+  previewInstructorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  previewAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.primaryLight,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 9,
+  },
+  previewInstructor: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.92)',
+    letterSpacing: -0.1,
+  },
+  previewDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    marginTop: 18,
+    marginBottom: 14,
+  },
+  previewMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  previewMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 18,
+    marginVertical: 2,
+  },
+  previewMetaText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.9)',
+    marginLeft: 6,
+    letterSpacing: -0.1,
   },
   card: {
     backgroundColor: colors.white,
@@ -1002,6 +1435,60 @@ const styles = StyleSheet.create({
   typeChipTextActive: {
     color: colors.white,
   },
+  trainerChipsContainer: {
+    paddingVertical: 12,
+  },
+  trainerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 100,
+    paddingLeft: 4,
+    paddingRight: 14,
+    paddingVertical: 4,
+    marginRight: 8,
+  },
+  trainerChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  trainerAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: `${colors.primary}12`,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  trainerAvatarActive: {
+    backgroundColor: colors.white,
+  },
+  trainerChipText: {
+    fontSize: 13,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  trainerChipTextActive: {
+    color: colors.white,
+  },
+  trainerLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  trainerEmptyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  trainerLoadingText: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
   nativePicker: {
     width: '100%',
     ...Platform.select({
@@ -1033,75 +1520,293 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     marginLeft: 10,
   },
-  metaInfoRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-    marginRight: -10,
-    marginBottom: -10,
-  },
-  metaChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.transparentGreenLight,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 10,
-    marginBottom: 10,
-  },
-  metaChipText: {
+  metaInputSuffix: {
     fontSize: 13,
-    fontWeight: '600',
-    color: colors.primary,
-    textTransform: 'capitalize',
-    marginLeft: 6,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    letterSpacing: 0.3,
   },
-  infoStrip: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+
+  // Day rail
+  railWrap: {
+    marginTop: 18,
     backgroundColor: colors.transparentGreenLight,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
+    borderColor: `${colors.primary}14`,
+  },
+  railHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  railTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  railTimePill: {
+    backgroundColor: colors.white,
+    borderRadius: 100,
+    paddingHorizontal: 11,
+    paddingVertical: 4,
+    borderWidth: 1,
     borderColor: `${colors.primary}20`,
   },
-  infoStripIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.white,
+  railTimePillText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: colors.primaryDark,
+    letterSpacing: 0.2,
+  },
+  railTrack: {
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: `${colors.primary}12`,
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  railBlock: {
+    position: 'absolute',
+    height: 14,
+    minWidth: 14,
+    borderRadius: 7,
+    backgroundColor: colors.primary,
     alignItems: 'center',
-    ...colors.shadow,
+    justifyContent: 'center',
   },
-  infoStripContent: {
-    flex: 1,
-    marginLeft: 12,
+  railBlockDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: colors.white,
   },
-  infoStripTitle: {
+  railScale: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  railScaleText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: colors.textLight,
+    letterSpacing: 0.4,
+  },
+
+  // Duration quick-picks
+  durationChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  durChip: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  durChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  durChipText: {
     fontSize: 14,
     fontWeight: '700',
     color: colors.textPrimary,
+    letterSpacing: 0.2,
   },
-  infoStripText: {
+  durChipTextActive: {
+    color: colors.white,
+  },
+
+  // Capacity stepper
+  stepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.transparentGreenLight,
+    borderRadius: 18,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: `${colors.primary}14`,
+  },
+  stepperBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: colors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: `${colors.primary}22`,
+    ...colors.shadow,
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  stepperBtnDisabled: {
+    opacity: 0.4,
+  },
+  stepperValueWrap: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  stepperValue: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: colors.textPrimary,
+    letterSpacing: -0.5,
+  },
+  stepperUnit: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginTop: 1,
+  },
+
+  // Mat occupancy gauge
+  matGauge: {
+    marginTop: 20,
+    backgroundColor: colors.transparentGreenLight,
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: `${colors.primary}14`,
+  },
+  matHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  matHeaderLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  matHeaderValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.primaryDark,
+    letterSpacing: -0.3,
+  },
+  matHeaderValueDim: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.textLight,
+  },
+  matDotsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  matDot: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 7,
+    marginBottom: 7,
+  },
+  matDotFilled: {
+    backgroundColor: colors.primary,
+  },
+  matDotEmpty: {
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: `${colors.primary}40`,
+  },
+  matEmptyHint: {
     fontSize: 13,
     color: colors.textSecondary,
+    fontStyle: 'italic',
+    marginBottom: 7,
   },
-  infoStripNote: {
+  matOverflowHint: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+    marginBottom: 7,
+    marginLeft: 2,
+  },
+  matLegendRow: {
+    flexDirection: 'row',
+    marginTop: 6,
+  },
+  matLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 18,
+  },
+  matLegendDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 6,
+    marginBottom: 0,
+  },
+  matLegendText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: colors.textSecondary,
+  },
+  matNote: {
     fontSize: 12,
     color: colors.textSecondary,
     fontStyle: 'italic',
+    marginTop: 12,
+  },
+  footerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: Platform.OS === 'ios' ? 30 : 16,
+    backgroundColor: colors.white,
+    borderTopWidth: 1,
+    borderTopColor: `${colors.primary}12`,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+  footerCancel: {
+    paddingVertical: 16,
+    paddingHorizontal: 22,
+    borderRadius: 14,
+    backgroundColor: colors.transparentGreenLight,
+    marginRight: 12,
+  },
+  footerCancelText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   saveButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 16,
-    marginTop: 10,
-    ...colors.shadow,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.32,
+    shadowRadius: 14,
+    elevation: 6,
   },
   saveButtonDisabled: {
     opacity: 0.6,
@@ -1109,8 +1814,9 @@ const styles = StyleSheet.create({
   saveButtonText: {
     color: colors.white,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     marginLeft: 8,
+    letterSpacing: 0.2,
   },
   timeSlotScroll: {
     maxHeight: 300,

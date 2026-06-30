@@ -277,15 +277,21 @@ export const getCurrentUserData = async (uid) => {
         userData: userDoc.data()
       };
     } else {
+      // Document genuinely does not exist (e.g. user removed from admin panel)
       return {
         success: false,
+        notFound: true,
         message: 'Kullanıcı verisi bulunamadı.'
       };
     }
   } catch (error) {
+    // A thrown error here is a transient read/network failure, NOT a missing
+    // user. Do not treat it as "account deleted" — the caller must keep the
+    // session and retry rather than signing the user out.
     console.error('Get user data error:', error);
     return {
       success: false,
+      notFound: false,
       error: error.code,
       message: 'Kullanıcı verisi alınırken hata oluştu.'
     };

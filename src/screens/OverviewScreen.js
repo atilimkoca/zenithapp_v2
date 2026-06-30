@@ -71,7 +71,7 @@ export default function OverviewScreen({ navigation }) {
       // OPTIMIZED: Load credits first (fast), then lessons
       // Use the optimized getUpcomingLessonsOnly for initial load
       const [creditsResult, upcomingResult] = await Promise.all([
-        lessonCreditsService.getUserCredits(user.uid),
+        lessonCreditsService.getActivePackageCredits(user.uid),
         isRefresh 
           ? userLessonService.getUserLessons(user.uid, { forceRefresh: true })
           : userLessonService.getUpcomingLessonsOnly(user.uid, 3)

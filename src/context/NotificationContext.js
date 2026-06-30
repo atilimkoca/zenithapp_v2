@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { notificationService } from '../services/notificationService';
+import { pushNotificationService } from '../services/pushNotificationService';
 import { useAuth } from './AuthContext';
 
 const NotificationContext = createContext();
@@ -67,12 +68,20 @@ export const NotificationProvider = ({ children }) => {
     };
   }, [user?.uid]);
 
+  // Keep the iOS/Android app icon badge in sync with the real unread count.
+  // Push payloads set a badge but never clear it; syncing here means the badge
+  // drops to 0 the moment the user reads their notifications.
+  useEffect(() => {
+    pushNotificationService.setBadgeCount(unreadCount).catch(() => {});
+  }, [unreadCount]);
+
   const resetNotificationState = () => {
     setNotifications([]);
     setUnreadCount(0);
     setLoading(false);
     setLastDoc(null);
     setHasMore(true);
+    pushNotificationService.setBadgeCount(0).catch(() => {});
   };
 
   const setupNotificationListener = () => {
