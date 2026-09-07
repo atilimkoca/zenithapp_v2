@@ -1,6 +1,7 @@
-import { collection, query, where, getDocs, orderBy, doc, getDoc, updateDoc, arrayRemove } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { bookingHistoryService } from './bookingHistoryService';
+import { leaveLessonAtomically, BookingError, isBookingError } from './bookingTransactions';
 
 // Cache configuration for performance
 const CACHE_TTL = 60 * 1000; // 1 minute cache for user lessons
@@ -372,117 +373,80 @@ export const userLessonService = {
   // Cancel a lesson booking
   cancelLessonBooking: async (lessonId, userId) => {
     try {
-      
-      const lessonRef = doc(db, 'lessons', lessonId);
-      const lessonDoc = await getDoc(lessonRef);
-      
-      if (!lessonDoc.exists()) {
-        return {
-          success: false,
-          message: 'Ders bulunamadı.'
-        };
-      }
-      
-      const lessonData = lessonDoc.data();
-      
-      // Check if user is in participants
-      if (!lessonData.participants || !lessonData.participants.includes(userId)) {
-        return {
-          success: false,
-          message: 'Bu derse kayıtlı değilsiniz.'
-        };
-      }
-      
-      // Check if lesson can be cancelled (must be at least 8 hours before start time)
-      try {
-        // Create lesson datetime by combining scheduledDate with startTime
-        // Use parseDateValue to handle timezone issues with date-only strings
-        const lessonDateTime = parseDateValue(lessonData.scheduledDate) || new Date();
-        if (lessonData.startTime) {
-          const [hours, minutes] = lessonData.startTime.split(':').map(Number);
-          lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);
-        }
-
-        const now = new Date();
-        const timeDiff = lessonDateTime.getTime() - now.getTime();
-        const hoursUntilLesson = timeDiff / (1000 * 60 * 60);
-
-        if (hoursUntilLesson < 8) {
-          return {
-            success: false,
-            message: 'Lessons can be cancelled up to 8 hours before start time.',
-            messageKey: 'classes.cancelTooLate',
-            data: {
+      // Seat removal and the credit refund happen in ONE Firestore transaction,
+      // so a member can no longer be dropped from a lesson without getting the
+      // credit back. The 8-hour rule is checked on the data read inside it.
+      const result = await leaveLessonAtomically({
+        lessonId,
+        userId,
+        lessonInfo: (lessonData) => `Ders iptali: ${lessonData.title} - ${lessonData.scheduledDate}`,
+        allowMissingUser: true,
+        validateLesson: (lessonData) => {
+          const lessonDateTime = parseDateValue(lessonData.scheduledDate) || new Date();
+          if (lessonData.startTime) {
+            const [hours, minutes] = lessonData.startTime.split(':').map(Number);
+            lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);
+          }
+          const hoursUntilLesson = (lessonDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+          if (hoursUntilLesson < 8) {
+            throw new BookingError('cancelTooLate', 'Lessons can be cancelled up to 8 hours before start time.', {
               hoursUntilLesson: Math.max(0, hoursUntilLesson)
-            }
-          };
-        }
-      } catch (timeError) {
-        console.warn('Time check error, allowing cancellation:', timeError);
-        // If we can't check time properly, allow cancellation
-      }
-      
-      // Remove user from participants array
-      await updateDoc(lessonRef, {
-        participants: arrayRemove(userId),
-        updatedAt: new Date().toISOString()
+            });
+          }
+        },
+        lessonExtra: { updatedAt: new Date().toISOString() },
+        userExtra: { updatedAt: new Date().toISOString() },
       });
 
-      // Refund lesson credit to the appropriate package
-      try {
-        const { adminService } = await import('./adminService');
-        const lessonScheduledDate = lessonData.scheduledDate || new Date().toISOString();
-        const refundResult = await adminService.refundLessonToPackage(
-          userId,
-          lessonScheduledDate,
-          `Ders iptali: ${lessonData.title} - ${lessonData.scheduledDate}`
-        );
+      const { lessonData } = result;
 
-        if (!refundResult.success) {
-          console.warn('⚠️ Could not refund credit to package, but cancellation continues:', refundResult.error);
-        } else {
-          console.log('✅ Lesson credit refunded to package:', refundResult.packageName);
-        }
-      } catch (creditError) {
-        console.warn('⚠️ Credit refund failed:', creditError);
-        // Don't fail the cancellation if credit refund fails
-      }
-
-      // Update booking history
+      // Booking history is an audit trail; never fail the cancellation over it.
       try {
-        await bookingHistoryService.updateBookingHistory(userId, lessonId, 'cancelled', 
+        await bookingHistoryService.updateBookingHistory(userId, lessonId, 'cancelled',
           'Kullanıcı tarafından iptal edildi');
       } catch (historyError) {
         console.warn('⚠️ Could not update booking history:', historyError);
-        // Don't fail the cancellation if history update fails
       }
-      
-      // Clear cache after cancellation so next fetch gets fresh data
+
+      // Clear caches so the next fetch gets fresh data
       clearUserLessonsCache(userId);
-      
+
       // Invalidate the per-date cache in lessonService for this lesson's date
+      // (dynamic import avoids a module cycle).
       try {
         const { lessonService } = await import('./lessonService');
-        if (lessonData.scheduledDate) {
-          const lessonDate = parseDateValue(lessonData.scheduledDate);
-          if (lessonDate) {
-            // Use local date format to match cache keys (avoid UTC timezone issues)
-            const year = lessonDate.getFullYear();
-            const month = String(lessonDate.getMonth() + 1).padStart(2, '0');
-            const day = String(lessonDate.getDate()).padStart(2, '0');
-            const dateKey = `${year}-${month}-${day}`;
-            lessonService.invalidateDateCache(dateKey);
-          }
+        const lessonDate = parseDateValue(lessonData.scheduledDate);
+        if (lessonDate) {
+          const year = lessonDate.getFullYear();
+          const month = String(lessonDate.getMonth() + 1).padStart(2, '0');
+          const day = String(lessonDate.getDate()).padStart(2, '0');
+          lessonService.invalidateDateCache(`${year}-${month}-${day}`);
         }
       } catch (cacheError) {
         console.warn('⚠️ Could not invalidate lesson cache:', cacheError);
       }
-      
+
       return {
         success: true,
         messageKey: 'classes.cancelSuccessMessage'
       };
     } catch (error) {
+      if (isBookingError(error)) {
+        if (error.code === 'lessonNotFound') {
+          return { success: false, message: 'Ders bulunamadı.' };
+        }
+        if (error.code === 'notRegistered') {
+          return { success: false, message: 'Bu derse kayıtlı değilsiniz.' };
+        }
+        if (error.code === 'cancelTooLate') {
+          return {
+            success: false,
+            message: error.message,
+            messageKey: 'classes.cancelTooLate',
+            data: error.data
+          };
+        }
+      }
       console.error('Error cancelling lesson booking:', error);
       return {
         success: false,

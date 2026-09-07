@@ -356,7 +356,7 @@ export default function App() {
           <NavigationContainer>
             {/* 🎄 Christmas Wrapper - Remove or set enabled: false in christmasConfig.js after Christmas */}
             <ChristmasWrapper>
-              <StatusBar style="dark" backgroundColor={colors.background} />
+              <StatusBar style="dark" />
               <Navigation />
             </ChristmasWrapper>
           </NavigationContainer>

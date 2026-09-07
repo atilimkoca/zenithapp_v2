@@ -211,6 +211,8 @@
     accountDeleted: 'Your account has been deleted. You cannot book lessons.',
     packageExpiredForLesson: 'Your package expires before this lesson date. Please renew your package.',
     noPackageForDate: 'You don\'t have a valid package for this lesson date. Please purchase a package that covers this date.',
+    lessonFull: 'This lesson is full. No more reservations can be made.',
+    alreadyBooked: 'You are already registered for this lesson.',
   },
   
   // Overview
@@ -281,6 +283,8 @@
     tooLateButton: 'Too Late',
     tooLateTitle: 'Booking Too Late',
     tooLateMessage: 'This class can be booked until 2 hours before it starts.',
+    tooLateToBook: 'This class can be booked until 2 hours before it starts.',
+    offlineNotice: 'You are offline. Availability shown may be out of date.',
     minutes: 'minutes',
     minutesShort: 'min',
     infoTitle: 'Booking Guide',

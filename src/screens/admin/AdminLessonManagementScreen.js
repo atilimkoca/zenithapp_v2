@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useIsFocused } from '@react-navigation/native';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { colors } from '../../constants/colors';
@@ -26,6 +27,7 @@ import UniqueHeader from '../../components/UniqueHeader';
 import DateCarouselPicker from '../../components/DateCarouselPicker';
 
 export default function AdminLessonManagementScreen({ navigation }) {
+  const isFocused = useIsFocused();
   const { user } = useAuth();
   const { language } = useI18n();
   const [loading, setLoading] = useState(true);
@@ -214,6 +216,24 @@ export default function AdminLessonManagementScreen({ navigation }) {
     return unsubscribe;
   }, [navigation, refreshData]);
 
+  // Live updates for the selected day while this screen is focused. Without
+  // this the list froze at whatever was loaded when the screen was opened, so a
+  // booking made minutes ago could still look like an empty class.
+  useEffect(() => {
+    if (!isFocused || !selectedDateKey) return undefined;
+
+    const unsubscribe = lessonService.subscribeToLessonsForDate(
+      selectedDateKey,
+      (lessons) => {
+        setCurrentDateLessons(lessons);
+        setLoadingLessons(false);
+        setLoading(false);
+      }
+    );
+
+    return unsubscribe;
+  }, [isFocused, selectedDateKey]);
+
   const onRefresh = async () => {
     setRefreshing(true);
     await refreshData(true);
@@ -226,14 +246,62 @@ export default function AdminLessonManagementScreen({ navigation }) {
     loadLessonsForDate(dateKey);
   }, [loadLessonsForDate]);
 
+  // Names for a set of user ids, in order. Used by the delete confirmation;
+  // unlike fetchParticipantDetails this returns the values instead of storing
+  // them in state.
+  const fetchParticipantNames = async (participantIds) => {
+    const names = [];
+    for (const participantId of participantIds) {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', participantId));
+        if (userDoc.exists()) {
+          const u = userDoc.data();
+          const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.displayName;
+          names.push(name || `ID: ${participantId.substring(0, 8)}…`);
+        } else {
+          names.push(`Silinmiş üye (${participantId.substring(0, 6)}…)`);
+        }
+      } catch (error) {
+        console.warn('Could not load participant name:', participantId, error?.message);
+        names.push(`ID: ${participantId.substring(0, 8)}…`);
+      }
+    }
+    return names;
+  };
+
   const handleCancelLesson = async (lessonId, lessonTitle) => {
+    // Read the lesson fresh: the card may have been on screen for a while and a
+    // member could have booked since. Deleting a class that still has people in
+    // it is exactly the mistake this confirmation exists to prevent.
+    let warning = '';
+    let hasParticipants = false;
+    try {
+      const fresh = await lessonService.getLessonById(lessonId);
+      if (fresh.success) {
+        const participants = fresh.lesson.participants || [];
+        if (participants.length > 0) {
+          hasParticipants = true;
+          const names = await fetchParticipantNames(participants);
+          warning =
+            `\n\n⚠️ Bu derste ${participants.length} kayıtlı öğrenci var:\n` +
+            names.map((n) => `• ${n}`).join('\n') +
+            '\n\nSilerseniz ders hakları iade edilir ve öğrencilerin rezervasyonu ortadan kalkar.';
+        }
+      } else {
+        warning = '\n\n⚠️ Ders bilgisi doğrulanamadı. Kayıtlı öğrenci olabilir.';
+      }
+    } catch (error) {
+      console.warn('Could not verify participants before delete:', error?.message);
+      warning = '\n\n⚠️ Ders bilgisi doğrulanamadı. Kayıtlı öğrenci olabilir.';
+    }
+
     Alert.alert(
       'Dersi Sil',
-      `"${lessonTitle}" dersini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.`,
+      `"${lessonTitle}" dersini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.${warning}`,
       [
         { text: 'Hayır', style: 'cancel' },
         {
-          text: 'Evet, Sil',
+          text: hasParticipants ? 'Yine de Sil' : 'Evet, Sil',
           style: 'destructive',
           onPress: async () => {
             try {
@@ -285,6 +353,7 @@ export default function AdminLessonManagementScreen({ navigation }) {
 
       setDeletePreview({
         count: matches.length,
+        enrolled: matches.reduce((total, m) => total + (m.participants?.length || 0), 0),
         sample: matches.slice(0, 4).map((m) => ({
           id: m.id,
           title: m.title,
@@ -885,6 +954,11 @@ export default function AdminLessonManagementScreen({ navigation }) {
               {deletePreview && (
                 <View style={styles.bulkPreviewBox}>
                   <Text style={styles.bulkPreviewTitle}>{deletePreview.count} ders silinecek</Text>
+                  {deletePreview.enrolled > 0 && (
+                    <Text style={[styles.bulkPreviewTitle, { color: colors.error }]}>
+                      ⚠️ Bu derslerde toplam {deletePreview.enrolled} kayıtlı öğrenci var
+                    </Text>
+                  )}
                   {deletePreview.sample.map((item) => (
                     <Text key={item.id} style={styles.bulkPreviewItem}>
                       {item.day} • {item.time} • {item.title}

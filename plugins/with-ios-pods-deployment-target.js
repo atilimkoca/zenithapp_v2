@@ -39,7 +39,8 @@ function updatePodfile(contents, deploymentTarget) {
 }
 
 module.exports = function withIosPodsDeploymentTarget(config, props = {}) {
-  const deploymentTarget = props.deploymentTarget || '15.1';
+  // Expo SDK 56+ requires an iOS deployment target of at least 16.4.
+  const deploymentTarget = props.deploymentTarget || '16.4';
 
   return withDangerousMod(config, [
     'ios',

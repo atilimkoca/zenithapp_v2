@@ -1,7 +1,58 @@
-import { collection, query, where, getDocs, orderBy, doc, updateDoc, arrayUnion, arrayRemove, getDoc, addDoc, serverTimestamp, startAt, endAt, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, doc, updateDoc, getDoc, addDoc, serverTimestamp, startAt, endAt, onSnapshot } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { bookingHistoryService } from './bookingHistoryService';
 import { clearUserLessonsCache } from './userLessonService';
+import {
+  joinLessonAtomically,
+  leaveLessonAtomically,
+  cancelLessonWithRefunds,
+  deleteLessonWithRefunds,
+  BookingError,
+  isBookingError,
+} from './bookingTransactions';
+
+// Translation keys for booking failures raised by the transactional core.
+// ClassSelectionScreen shows `t(messageKey)` when a key is present.
+const BOOKING_ERROR_MESSAGE_KEYS = {
+  accountDeleted: 'classes.accountDeleted',
+  membershipCancelled: 'classes.membershipCancelled',
+  membershipFrozen: 'classes.membershipFrozen',
+  membershipInactive: 'classes.membershipInactive',
+  membershipNotStarted: 'classes.membershipNotStarted',
+  noPackageForDate: 'classes.noPackageForDate',
+  insufficientCredits: 'classes.insufficientCredits',
+  lessonFull: 'classes.lessonFull',
+  alreadyRegistered: 'classes.alreadyBooked',
+  tooLateToBook: 'classSelection.tooLateToBook',
+};
+
+const bookingErrorToResult = (error) => {
+  const messageKey = BOOKING_ERROR_MESSAGE_KEYS[error.code];
+  if (messageKey) {
+    return { success: false, code: error.code, messageKey, message: error.message };
+  }
+  if (error.code === 'lessonNotFound') {
+    return { success: false, code: error.code, message: 'Lesson not found.' };
+  }
+  if (error.code === 'userNotFound') {
+    return { success: false, code: error.code, message: 'Kullanıcı bulunamadı.' };
+  }
+  return { success: false, code: error.code, message: error.message || 'Rezervasyon yapılırken hata oluştu.' };
+};
+
+// Admin screens show `result.message` directly (no translation layer).
+const ADMIN_BOOKING_MESSAGES = {
+  lessonNotFound: 'Ders bulunamadı.',
+  userNotFound: 'Kullanıcı bulunamadı.',
+  lessonFull: 'Ders dolu. Maksimum katılımcı sayısına ulaşıldı.',
+  alreadyRegistered: 'Öğrenci zaten bu derse kayıtlı.',
+  notRegistered: 'Öğrenci bu derse kayıtlı değil.',
+  insufficientCredits: 'Öğrencinin kalan dersi yok. Lütfen paket satın almasını sağlayın.',
+  noPackageForDate: 'Bu tarih için geçerli bir paket bulunamadı.',
+};
+
+const adminBookingErrorMessage = (error) =>
+  ADMIN_BOOKING_MESSAGES[error.code] || error.message || 'İşlem sırasında hata oluştu.';
 
 // Cache configuration
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes for supporting data
@@ -39,6 +90,38 @@ let adminLessonsByDateCache = {};
 let adminAllLessonsCache = null;
 let adminLessonsCacheTimestamp = 0;
 let adminUpcomingLessonCount = 0;
+
+// ---- Day-key queries -------------------------------------------------------
+// Every lesson carries scheduledDateKey ("YYYY-MM-DD", studio-local day). Querying
+// by it returns only the requested day(s) instead of every active lesson the
+// studio ever had. Status is filtered client-side (single-field queries need no
+// composite index). Both helpers fall back to the historical full scan if the
+// day-key query itself fails, so the screen keeps working during a migration.
+const isActiveLesson = (data) => data.status === 'active';
+
+const queryUpcomingLessonSnapshot = async (todayStr, maxDateStr) => {
+  try {
+    const snapshot = await getDocs(query(
+      collection(db, 'lessons'),
+      where('scheduledDateKey', '>=', todayStr),
+      where('scheduledDateKey', '<=', maxDateStr)
+    ));
+    return { snapshot, usedDayKey: true };
+  } catch (error) {
+    console.warn('⚠️ Day-key range query failed, falling back to full scan:', error?.message);
+    const snapshot = await getDocs(query(collection(db, 'lessons'), where('status', '==', 'active')));
+    return { snapshot, usedDayKey: false };
+  }
+};
+
+const queryLessonSnapshotForDay = async (dateString) => {
+  try {
+    return await getDocs(query(collection(db, 'lessons'), where('scheduledDateKey', '==', dateString)));
+  } catch (error) {
+    console.warn('⚠️ Day-key query failed, falling back to full scan:', error?.message);
+    return getDocs(query(collection(db, 'lessons'), where('status', '==', 'active')));
+  }
+};
 
 const fetchTrainersData = async (options = {}) => {
   const forceRefresh = typeof options === 'boolean' ? options : options.forceRefresh;
@@ -329,10 +412,14 @@ const fetchAndCacheAllLessons = async (forceRefresh = false) => {
   ]);
 
   // Fetch all active lessons once
-  const lessonsSnapshot = await getDocs(query(collection(db, 'lessons'), where('status', '==', 'active')));
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const maxDate = new Date(today);
+  maxDate.setDate(maxDate.getDate() + 60);
+  const { snapshot: lessonsSnapshot } = await queryUpcomingLessonSnapshot(
+    formatDateToLocalKey(today),
+    formatDateToLocalKey(maxDate)
+  );
 
   const allLessons = [];
   const byDate = {};
@@ -340,6 +427,7 @@ const fetchAndCacheAllLessons = async (forceRefresh = false) => {
   lessonsSnapshot.forEach((doc) => {
     const data = doc.data();
     if (!data.scheduledDate || !data.startTime || !data.endTime) return;
+    if (!isActiveLesson(data)) return;
 
     const lessonDate = normalizeDateToMidnight(data.scheduledDate);
     if (!lessonDate || lessonDate < today) return;
@@ -399,28 +487,13 @@ const fetchAvailableDatesOnly = async (forceRefresh = false) => {
     let lessonsSnapshot;
     let usedRangeQuery = false;
 
-    try {
-      lessonsSnapshot = await getDocs(
-        query(
-          collection(db, 'lessons'),
-          where('status', '==', 'active'),
-          where('scheduledDate', '>=', todayStr),
-          where('scheduledDate', '<=', maxDateStr)
-        )
-      );
-      usedRangeQuery = true;
-    } catch (rangeError) {
-      // Fallback
-      lessonsSnapshot = await getDocs(
-        query(collection(db, 'lessons'), where('status', '==', 'active'))
-      );
-    }
+    ({ snapshot: lessonsSnapshot, usedDayKey: usedRangeQuery } = await queryUpcomingLessonSnapshot(todayStr, maxDateStr));
 
     const datesSet = new Set();
 
     lessonsSnapshot.forEach((docSnapshot) => {
       const data = docSnapshot.data();
-      if (!data.scheduledDate) return;
+      if (!data.scheduledDate || !isActiveLesson(data)) return;
 
       const lessonDate = normalizeDateToMidnight(data.scheduledDate);
       if (!lessonDate) return;
@@ -475,24 +548,8 @@ const fetchInitialDataOptimized = async () => {
     let lessonsSnapshot;
     let usedRangeQuery = false;
 
-    try {
-      lessonsSnapshot = await getDocs(
-        query(
-          collection(db, 'lessons'),
-          where('status', '==', 'active'),
-          where('scheduledDate', '>=', todayStr),
-          where('scheduledDate', '<=', maxDateStr)
-        )
-      );
-      usedRangeQuery = true;
-      console.log(`⚡ Used date range query: ${lessonsSnapshot.size} lessons`);
-    } catch (rangeError) {
-      // Fallback to fetching all and filtering client-side
-      console.warn('⚠️ Date range query failed, using client-side filter');
-      lessonsSnapshot = await getDocs(
-        query(collection(db, 'lessons'), where('status', '==', 'active'))
-      );
-    }
+    ({ snapshot: lessonsSnapshot, usedDayKey: usedRangeQuery } = await queryUpcomingLessonSnapshot(todayStr, maxDateStr));
+    console.log(`⚡ Lessons fetched: ${lessonsSnapshot.size} (day-key query: ${usedRangeQuery})`);
 
     const datesSet = new Set();
     const rawLessonsByDate = {};
@@ -501,6 +558,7 @@ const fetchInitialDataOptimized = async () => {
     lessonsSnapshot.forEach((docSnapshot) => {
       const data = docSnapshot.data();
       if (!data.scheduledDate || !data.startTime || !data.endTime) return;
+      if (!isActiveLesson(data)) return;
 
       const lessonDate = normalizeDateToMidnight(data.scheduledDate);
       if (!lessonDate) return;
@@ -578,20 +636,17 @@ const fetchLessonsForSingleDate = async (dateString, forceRefresh = false) => {
       fetchLessonStatus()
     ]);
 
-    // Always fetch all active lessons and filter client-side by normalized date.
-    // Reason: scheduledDate is stored in mixed formats across docs (ISO string with time
-    // vs plain "YYYY-MM-DD"). A direct `==` query against dateString silently misses
-    // ISO-formatted lessons, which caused students to see only one lesson on some dates.
-    // Client-side filter via normalizeDateValue handles every format consistently.
-    const lessonsSnapshot = await getDocs(
-      query(collection(db, 'lessons'), where('status', '==', 'active'))
-    );
+    // Query only this day's lessons via scheduledDateKey (falls back to the
+    // historical full scan if the query fails). The client-side date filter
+    // below stays as a safety net for that fallback path.
+    const lessonsSnapshot = await queryLessonSnapshotForDay(dateString);
 
     const lessons = [];
 
     lessonsSnapshot.forEach((docSnapshot) => {
       const data = docSnapshot.data();
       if (!data.scheduledDate || !data.startTime || !data.endTime) return;
+      if (!isActiveLesson(data)) return;
 
       const lessonDate = normalizeDateValue(data.scheduledDate);
       if (!lessonDate) return;
@@ -639,6 +694,67 @@ const invalidateDateCache = (dateString) => {
   }
 };
 
+// Live updates for one day. Calls onLessons(lessons, { fromCache }) on every
+// change; fromCache is true while the device is offline (the last known state
+// is shown). Returns an unsubscribe function. Supporting data (trainers, lesson
+// types, levels) is awaited first so processed lessons look the same as the
+// one-time fetch. The per-date cache is refreshed from every snapshot.
+const subscribeToLessonsForDate = (dateString, onLessons, onError) => {
+  let unsubscribe = null;
+  let cancelled = false;
+
+  (async () => {
+    try {
+      const [trainersMap, lessonTypes, statusLevels] = await Promise.all([
+        fetchTrainersData(),
+        fetchLessonTypes(),
+        fetchLessonStatus()
+      ]);
+      if (cancelled) return;
+
+      const dayQuery = query(collection(db, 'lessons'), where('scheduledDateKey', '==', dateString));
+      unsubscribe = onSnapshot(
+        dayQuery,
+        { includeMetadataChanges: true },
+        (snapshot) => {
+          const lessons = [];
+          snapshot.forEach((docSnapshot) => {
+            const data = docSnapshot.data();
+            if (!data.scheduledDate || !data.startTime || !data.endTime) return;
+            if (!isActiveLesson(data)) return;
+            const processedLesson = processLessonDoc(data, docSnapshot.id, trainersMap, lessonTypes, statusLevels);
+            if (processedLesson) {
+              lessons.push(processedLesson);
+            }
+          });
+
+          lessons.sort((a, b) => {
+            const timeA = (a.startTime || '').replace(':', '');
+            const timeB = (b.startTime || '').replace(':', '');
+            return (parseInt(timeA) || 0) - (parseInt(timeB) || 0);
+          });
+
+          perDateLessonsCache[dateString] = { lessons, timestamp: Date.now() };
+          lessonsByDateCache[dateString] = lessons;
+          onLessons(lessons, { fromCache: snapshot.metadata.fromCache });
+        },
+        (error) => {
+          console.warn(`⚠️ Live lesson updates unavailable for ${dateString}:`, error?.message);
+          if (onError) onError(error);
+        }
+      );
+    } catch (error) {
+      console.warn('⚠️ Could not start live lesson updates:', error?.message);
+      if (onError) onError(error);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+    if (unsubscribe) unsubscribe();
+  };
+};
+
 // Clear all lesson caches
 const clearAllLessonCaches = () => {
   perDateLessonsCache = {};
@@ -677,6 +793,9 @@ export const lessonService = {
   // Cache invalidation utilities
   invalidateDateCache,
   clearAllLessonCaches,
+
+  // Live updates for a single day (see subscribeToLessonsForDate above)
+  subscribeToLessonsForDate,
 
   // Preload supporting data for faster ClassSelectionScreen load
   preloadSupportingData,
@@ -982,218 +1101,85 @@ export const lessonService = {
   // Book a lesson (add user to participants)
   bookLesson: async (lessonId, userId) => {
     try {
-      
-      // Check if user membership is frozen
-      const userRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userRef);
-      
-      // Get lesson data early to check lesson date against membership start date
-      const lessonRef = doc(db, 'lessons', lessonId);
-      const lessonDoc = await getDoc(lessonRef);
-      
-      if (!lessonDoc.exists()) {
-        return {
-          success: false,
-          message: 'Lesson not found.'
-        };
-      }
-      
-      const lessonData = lessonDoc.data();
-      
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-
-        // Check if user is deleted
-        if (userData.status === 'deleted' || userData.status === 'permanently_deleted') {
-          return {
-            success: false,
-            messageKey: 'classes.accountDeleted'
-          };
-        }
-
-        // Check if membership is cancelled
-        if (userData.membershipStatus === 'cancelled' || userData.status === 'cancelled') {
-          return {
-            success: false,
-            messageKey: 'classes.membershipCancelled'
-          };
-        }
-
-        // Check if user has a package that covers this lesson date (multi-package support)
-        const { adminService } = await import('./adminService');
-        const lessonScheduledDate = normalizeDateValue(lessonData.scheduledDate);
-
-        if (lessonScheduledDate) {
-          const canBookResult = await adminService.canBookLessonOnDate(userId, lessonScheduledDate);
-          if (!canBookResult.canBook) {
-            return {
-              success: false,
-              messageKey: canBookResult.reason === 'noPackageForDate'
-                ? 'classes.noPackageForDate'
-                : 'classes.packageExpiredForLesson',
-              message: canBookResult.message
-            };
+      // Seat + credit change together in one Firestore transaction. Every
+      // eligibility check below runs on the data read inside that transaction,
+      // so two members racing for the last seat can no longer both get it and
+      // a credit can no longer be spent without the seat being recorded.
+      const result = await joinLessonAtomically({
+        lessonId,
+        userId,
+        lessonInfo: (lessonData) => `${lessonData.title} - ${lessonData.scheduledDate}`,
+        validateUser: (userData, lessonData) => {
+          if (userData.status === 'deleted' || userData.status === 'permanently_deleted') {
+            throw new BookingError('accountDeleted');
           }
-        }
+          if (userData.membershipStatus === 'cancelled' || userData.status === 'cancelled') {
+            throw new BookingError('membershipCancelled');
+          }
+          if (userData.membershipStatus === 'frozen' || userData.status === 'frozen') {
+            throw new BookingError('membershipFrozen');
+          }
+          if (userData.membershipStatus === 'inactive' || userData.status === 'inactive') {
+            throw new BookingError('membershipInactive');
+          }
 
-        // Check if membership is frozen
-        if (userData.membershipStatus === 'frozen' || userData.status === 'frozen') {
-          return {
-            success: false,
-            messageKey: 'classes.membershipFrozen'
-          };
-        }
-
-        // Check if membership is inactive
-        if (userData.membershipStatus === 'inactive' || userData.status === 'inactive') {
-          return {
-            success: false,
-            messageKey: 'classes.membershipInactive'
-          };
-        }
-
-        // Allow booking lessons that are on or after the membership start date
-        // (supports future-dated approvals - user can book future lessons even before membership starts)
-        if (userData.packageStartDate || userData.packageInfo?.assignedAt) {
+          // Lessons before the membership start date cannot be booked
+          // (future-dated approvals may still book future lessons).
           const startDateValue = userData.packageStartDate || userData.packageInfo?.assignedAt;
-          const membershipStartDate = new Date(startDateValue);
-          if (!Number.isNaN(membershipStartDate.getTime())) {
-            const normalizedMembershipStartDate = new Date(membershipStartDate);
-            normalizedMembershipStartDate.setHours(0, 0, 0, 0);
-            
-            // Get the lesson's scheduled date
-            const lessonScheduledDate = normalizeDateValue(lessonData.scheduledDate);
-            if (lessonScheduledDate) {
-              lessonScheduledDate.setHours(0, 0, 0, 0);
-              
-              // If lesson date is before membership start date, prevent booking
-              if (lessonScheduledDate < normalizedMembershipStartDate) {
-                return {
-                  success: false,
-                  messageKey: 'classes.membershipNotStarted'
-                };
-              }
+          if (startDateValue) {
+            const membershipStartDate = normalizeDateToMidnight(startDateValue);
+            const lessonScheduledDate = normalizeDateToMidnight(lessonData.scheduledDate);
+            if (membershipStartDate && lessonScheduledDate && lessonScheduledDate < membershipStartDate) {
+              throw new BookingError('membershipNotStarted');
             }
           }
-        }
-      }
-      
-      // Import lessonCreditsService
-      const { lessonCreditsService } = await import('./lessonCreditsService');
-      
-      // Check if user has enough credits
-      const creditCheck = await lessonCreditsService.checkUserCanBook(userId);
-      
-      if (!creditCheck.success || !creditCheck.canBook) {
-        return {
-          success: false,
-          messageKey: creditCheck.messageKey || 'classes.insufficientCredits',
-          message: creditCheck.message // Keep backward compatibility
-        };
-      }
-      
-      // lessonRef, lessonDoc, and lessonData already fetched above
-      const currentParticipants = lessonData.participants ? lessonData.participants.length : 0;
-      
-      // Check if lesson is full
-      if (currentParticipants >= lessonData.maxParticipants) {
-        return {
-          success: false,
-          message: 'Lesson is full. Cannot make reservation.'
-        };
-      }
-      
-      // Check if user is already registered
-      if (lessonData.participants && lessonData.participants.includes(userId)) {
-        return {
-          success: false,
-          message: 'Bu derse zaten kayıtlısınız.'
-        };
-      }
+        },
+        validateLesson: (lessonData) => {
+          // Reservations close 2 hours before the lesson starts.
+          const lessonDateTime = normalizeDateValue(lessonData.scheduledDate);
+          if (!lessonDateTime) return;
+          if (lessonData.startTime) {
+            const [hours, minutes] = lessonData.startTime.split(':').map(Number);
+            lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);
+          }
+          const hoursUntilLesson = (lessonDateTime.getTime() - Date.now()) / (1000 * 60 * 60);
+          if (hoursUntilLesson < 2) {
+            throw new BookingError('tooLateToBook', 'Reservations can only be made up to 2 hours before the lesson starts.');
+          }
+        },
+        lessonExtra: { updatedAt: new Date().toISOString() },
+        userExtra: { updatedAt: new Date().toISOString() },
+      });
 
-      // Check if lesson is too close to start (must be at least 2 hours before)
+      const { lessonData, plan } = result;
+
+      // Booking history is an audit trail; never fail the booking over it.
       try {
-        const lessonDateTime = normalizeDateValue(lessonData.scheduledDate);
-        if (lessonDateTime && lessonData.startTime) {
-          const [hours, minutes] = lessonData.startTime.split(':').map(Number);
-          lessonDateTime.setHours(hours || 0, minutes || 0, 0, 0);
-        }
-
-        const now = new Date();
-        const timeDiff = lessonDateTime ? lessonDateTime.getTime() - now.getTime() : Infinity;
-        const hoursUntilLesson = timeDiff / (1000 * 60 * 60);
-
-        if (hoursUntilLesson < 2) {
-          return {
-            success: false,
-            messageKey: 'classSelection.tooLateToBook',
-            message: 'Reservations can only be made up to 2 hours before the lesson starts.'
-          };
-        }
-      } catch (timeError) {
-        console.warn('Time check error:', timeError);
-        // If we can't check time properly, allow booking
+        await bookingHistoryService.createBookingHistory(userId, lessonId, {
+          ...lessonData,
+          id: lessonId
+        }, 'booked');
+      } catch (historyError) {
+        console.warn('⚠️ Could not create booking history:', historyError);
       }
 
-      // Deduct lesson from the appropriate package using multi-package system
-      const { adminService } = await import('./adminService');
-      const lessonDateForDeduction = lessonData.scheduledDate;
-
-      const deductResult = await adminService.deductLessonFromPackage(
-        userId,
-        lessonDateForDeduction,
-        `${lessonData.title} - ${lessonData.scheduledDate}`
-      );
-
-      if (!deductResult.success) {
-        return {
-          success: false,
-          messageKey: deductResult.noPackageForDate ? 'classes.noPackageForDate' : 'classes.insufficientCredits',
-          message: deductResult.error || 'Error occurred while using lesson credit.'
-        };
+      // Clear caches so both "Derslerim" and "Ders Seç" show the new state.
+      clearUserLessonsCache(userId);
+      const lessonDate = normalizeDateValue(lessonData.scheduledDate);
+      if (lessonDate) {
+        invalidateDateCache(formatDateToLocalKey(lessonDate));
       }
 
-      try {
-        // Add user to participants
-        await updateDoc(lessonRef, {
-          participants: arrayUnion(userId),
-          updatedAt: new Date().toISOString()
-        });
-
-        // Create booking history record
-        try {
-          await bookingHistoryService.createBookingHistory(userId, lessonId, {
-            ...lessonData,
-            id: lessonId
-          }, 'booked');
-        } catch (historyError) {
-          console.warn('⚠️ Could not create booking history:', historyError);
-          // Don't fail the booking if history creation fails
-        }
-
-        // Clear user lessons cache after successful booking
-        clearUserLessonsCache(userId);
-
-        // Invalidate the per-date cache for this lesson's date so UI updates immediately
-        const lessonDate = normalizeDateValue(lessonData.scheduledDate);
-        if (lessonDate) {
-          const dateKey = formatDateToLocalKey(lessonDate);
-          invalidateDateCache(dateKey);
-        }
-
-        return {
-          success: true,
-          messageKey: 'classSelection.bookingSuccessMessage',
-          remainingCredits: deductResult.totalRemaining,
-          deductedFromPackage: deductResult.packageName
-        };
-      } catch (bookingError) {
-        // If booking fails after consuming credit, we should ideally refund
-        // For now, log the error - refund logic can be added if needed
-        console.error('❌ Booking failed after deducting credit:', bookingError);
-        throw bookingError;
-      }
+      return {
+        success: true,
+        messageKey: 'classSelection.bookingSuccessMessage',
+        remainingCredits: plan.totalRemaining,
+        deductedFromPackage: plan.packageName
+      };
     } catch (error) {
+      if (isBookingError(error)) {
+        return bookingErrorToResult(error);
+      }
       console.error('Error booking lesson:', error);
       return {
         success: false,
@@ -1524,7 +1510,89 @@ const fetchAndCacheAdminLessons = async (options = {}) => {
 };
 
 // Admin-specific methods for lesson management
+// Live updates of one day for the ADMIN list. Keeps every status, because
+// admins need to see cancelled and completed lessons too. Calls
+// onLessons(lessons, { fromCache }) on each change and refreshes the admin
+// per-date cache. Returns an unsubscribe function.
+const subscribeToAdminLessonsForDate = (dateString, onLessons, onError) => {
+  let unsubscribe = null;
+  let cancelled = false;
+
+  (async () => {
+    try {
+      const [trainersMap, lessonTypes, statusLevels] = await Promise.all([
+        fetchTrainersData(),
+        fetchLessonTypes(),
+        fetchLessonStatus()
+      ]);
+      if (cancelled) return;
+
+      const dayQuery = query(collection(db, 'lessons'), where('scheduledDateKey', '==', dateString));
+      unsubscribe = onSnapshot(
+        dayQuery,
+        { includeMetadataChanges: true },
+        (snapshot) => {
+          const lessons = [];
+          snapshot.forEach((docSnapshot) => {
+            const data = docSnapshot.data();
+            const processedLesson = processLessonDoc(data, docSnapshot.id, trainersMap, lessonTypes, statusLevels);
+            if (processedLesson) lessons.push(processedLesson);
+          });
+
+          lessons.sort((a, b) => {
+            const timeA = (a.startTime || '').replace(':', '');
+            const timeB = (b.startTime || '').replace(':', '');
+            return (parseInt(timeA, 10) || 0) - (parseInt(timeB, 10) || 0);
+          });
+
+          adminLessonsByDateCache[dateString] = lessons;
+          onLessons(lessons, { fromCache: snapshot.metadata.fromCache });
+        },
+        (error) => {
+          console.warn(`⚠️ Live admin lesson updates unavailable for ${dateString}:`, error?.message);
+          if (onError) onError(error);
+        }
+      );
+    } catch (error) {
+      console.warn('⚠️ Could not start live admin lesson updates:', error?.message);
+      if (onError) onError(error);
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+    if (unsubscribe) unsubscribe();
+  };
+};
+
 const adminLessonService = {
+  // Live updates for a single day (see subscribeToAdminLessonsForDate above)
+  subscribeToLessonsForDate: subscribeToAdminLessonsForDate,
+
+  // Read one lesson straight from Firestore, bypassing every cache. Used before
+  // destructive actions so the confirmation shows the true participant list
+  // even when the screen has been open for a while.
+  getLessonById: async (lessonId) => {
+    try {
+      const snapshot = await getDoc(doc(db, 'lessons', lessonId));
+      if (!snapshot.exists()) {
+        return { success: false, message: 'Ders bulunamadı.' };
+      }
+      const data = snapshot.data();
+      return {
+        success: true,
+        lesson: {
+          id: snapshot.id,
+          ...data,
+          participants: Array.isArray(data.participants) ? data.participants : [],
+        },
+      };
+    } catch (error) {
+      console.error('Error getting lesson by id:', error);
+      return { success: false, error: error.code, message: 'Ders bilgisi alınamadı.' };
+    }
+  },
+
   // Lightweight date list for admin (uses filtered window)
   getAvailableDates: async (options = {}) => {
     const normalizedOptions = typeof options === 'boolean' ? { forceRefresh: options } : options;
@@ -1646,49 +1714,38 @@ const adminLessonService = {
   // Cancel a lesson
   cancelLesson: async (lessonId, adminId) => {
     try {
-      const lessonRef = doc(db, 'lessons', lessonId);
-      const lessonDoc = await getDoc(lessonRef);
-      
-      if (!lessonDoc.exists()) {
+      const nowISO = new Date().toISOString();
+      // Refund every participant and mark the lesson cancelled in ONE transaction.
+      const result = await cancelLessonWithRefunds({
+        lessonId,
+        lessonInfo: (lessonData) => `Ders iptal edildi: ${lessonData.title || 'İsimsiz Ders'}`,
+        lessonUpdate: {
+          status: 'cancelled',
+          cancelledAt: nowISO,
+          cancelledBy: adminId,
+          updatedAt: nowISO
+        },
+        userExtra: { updatedAt: nowISO }
+      });
+
+      result.refunded.forEach(({ userId }) => clearUserLessonsCache(userId));
+      const lessonDate = normalizeDateValue(result.lessonData.scheduledDate);
+      if (lessonDate) {
+        invalidateDateCache(formatDateToLocalKey(lessonDate));
+      }
+
+      return {
+        success: true,
+        message: 'Ders başarıyla iptal edildi.',
+        refundedCount: result.refunded.length
+      };
+    } catch (error) {
+      if (isBookingError(error) && error.code === 'lessonNotFound') {
         return {
           success: false,
           message: 'Ders bulunamadı.'
         };
       }
-      
-      const lessonData = lessonDoc.data();
-      const participants = lessonData.participants || [];
-      const lessonScheduledDate = lessonData.scheduledDate || lessonData.date;
-      
-      // Refund credits to all participants
-      if (participants.length > 0 && lessonScheduledDate) {
-        const adminService = require('./adminService').default;
-        for (const participantId of participants) {
-          try {
-            await adminService.refundLessonToPackage(
-              participantId,
-              lessonScheduledDate,
-              `Ders iptal edildi: ${lessonData.title || 'İsimsiz Ders'}`
-            );
-            console.log(`✅ Credit refunded for participant: ${participantId}`);
-          } catch (refundError) {
-            console.error(`❌ Failed to refund credit for participant ${participantId}:`, refundError);
-          }
-        }
-      }
-      
-      await updateDoc(lessonRef, {
-        status: 'cancelled',
-        cancelledAt: new Date().toISOString(),
-        cancelledBy: adminId,
-        updatedAt: new Date().toISOString()
-      });
-      
-      return {
-        success: true,
-        message: 'Ders başarıyla iptal edildi.'
-      };
-    } catch (error) {
       console.error('Error cancelling lesson:', error);
       return {
         success: false,
@@ -1701,39 +1758,33 @@ const adminLessonService = {
   // Permanently delete a lesson
   deleteLesson: async (lessonId) => {
     try {
-      // First get the lesson to refund participants
-      const lessonRef = doc(db, 'lessons', lessonId);
-      const lessonDoc = await getDoc(lessonRef);
-      
-      if (lessonDoc.exists()) {
-        const lessonData = lessonDoc.data();
-        const participants = lessonData.participants || [];
-        const lessonScheduledDate = lessonData.scheduledDate || lessonData.date;
-        
-        // Refund credits to all participants before deleting
-        if (participants.length > 0 && lessonScheduledDate) {
-          const adminService = require('./adminService').default;
-          for (const participantId of participants) {
-            try {
-              await adminService.refundLessonToPackage(
-                participantId,
-                lessonScheduledDate,
-                `Ders silindi: ${lessonData.title || 'İsimsiz Ders'}`
-              );
-              console.log(`✅ Credit refunded for participant: ${participantId}`);
-            } catch (refundError) {
-              console.error(`❌ Failed to refund credit for participant ${participantId}:`, refundError);
-            }
-          }
-        }
+      const nowISO = new Date().toISOString();
+      // Refund every participant and delete the lesson in ONE transaction.
+      const result = await deleteLessonWithRefunds({
+        lessonId,
+        lessonInfo: (lessonData) => `Ders silindi: ${lessonData.title || 'İsimsiz Ders'}`,
+        userExtra: { updatedAt: nowISO }
+      });
+
+      result.refunded.forEach(({ userId }) => clearUserLessonsCache(userId));
+      const lessonDate = normalizeDateValue(result.lessonData.scheduledDate);
+      if (lessonDate) {
+        invalidateDateCache(formatDateToLocalKey(lessonDate));
       }
-      
-      await deleteDoc(lessonRef);
+
       return {
         success: true,
-        message: 'Ders silindi.'
+        message: 'Ders silindi.',
+        refundedCount: result.refunded.length
       };
     } catch (error) {
+      if (isBookingError(error) && error.code === 'lessonNotFound') {
+        // Nothing left to delete; the previous implementation also reported success here.
+        return {
+          success: true,
+          message: 'Ders silindi.'
+        };
+      }
       console.error('Error deleting lesson:', error);
       return {
         success: false,
@@ -2012,151 +2063,52 @@ const adminLessonService = {
   // Manually add student to lesson (admin/instructor only)
   addStudentToLesson: async (lessonId, userId, adminId) => {
     try {
-      // First, check user's remaining credits
-      const userRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userRef);
-      
-      if (!userDoc.exists()) {
-        return {
-          success: false,
-          message: 'Kullanıcı bulunamadı.'
-        };
-      }
-      
-      const userData = userDoc.data();
-      const remainingCredits = userData.remainingClasses || userData.lessonCredits || 0;
-
-      if (remainingCredits <= 0) {
-        return {
-          success: false,
-          message: 'Öğrencinin kalan dersi yok. Lütfen paket satın almasını sağlayın.'
-        };
-      }
-
-      // Check if user is deleted
-      if (userData.status === 'deleted' || userData.status === 'permanently_deleted') {
-        return {
-          success: false,
-          message: 'Bu öğrenci silinmiş. Silinen üyeler derse eklenemez.'
-        };
-      }
-
-      // Check if user is cancelled
-      if (userData.status === 'cancelled' || userData.membershipStatus === 'cancelled') {
-        return {
-          success: false,
-          message: 'Bu öğrencinin üyeliği iptal edilmiş. İptal edilen üyeler derse eklenemez.'
-        };
-      }
-
-      // Check if user is frozen
-      if (userData.membershipStatus === 'frozen' || userData.status === 'frozen') {
-        return {
-          success: false,
-          message: 'Bu öğrencinin üyeliği dondurulmuş. Dondurulmuş üyeler derse eklenemez.'
-        };
-      }
-
-      const lessonRef = doc(db, 'lessons', lessonId);
-      const lessonDoc = await getDoc(lessonRef);
-
-      if (!lessonDoc.exists()) {
-        return {
-          success: false,
-          message: 'Ders bulunamadı.'
-        };
-      }
-
-      const lessonData = lessonDoc.data();
-
-      // Check if package has expired for this lesson date.
-      // packages[] is the source of truth — use the latest non-cancelled package
-      // expiry and fall back to the cached packageExpiryDate only when no packages
-      // exist. This keeps admin-add consistent with the member's self-booking path
-      // (canBookLessonOnDate) and avoids blocking when the cache has drifted.
-      let effectiveExpiry = null;
-      if (Array.isArray(userData.packages) && userData.packages.length > 0) {
-        effectiveExpiry = userData.packages.reduce((latest, pkg) => {
-          if (pkg.status === 'cancelled' || !pkg.expiryDate) return latest;
-          const exp = new Date(pkg.expiryDate);
-          if (Number.isNaN(exp.getTime())) return latest;
-          return (!latest || exp > latest) ? exp : latest;
-        }, null);
-      }
-      if (!effectiveExpiry) {
-        const fallbackExpiry = userData.packageExpiryDate || userData.packageInfo?.expiryDate;
-        effectiveExpiry = fallbackExpiry ? new Date(fallbackExpiry) : null;
-      }
-
-      if (effectiveExpiry && !Number.isNaN(effectiveExpiry.getTime()) && lessonData.scheduledDate) {
-        const expiryDate = new Date(effectiveExpiry);
-        expiryDate.setHours(23, 59, 59, 999);
-
-        let lessonDate;
-        if (typeof lessonData.scheduledDate === 'string') {
-          lessonDate = new Date(lessonData.scheduledDate);
-        } else if (lessonData.scheduledDate.toDate) {
-          lessonDate = lessonData.scheduledDate.toDate();
-        } else {
-          lessonDate = new Date(lessonData.scheduledDate);
-        }
-        lessonDate.setHours(0, 0, 0, 0);
-
-        if (lessonDate > expiryDate) {
-          return {
-            success: false,
-            message: 'Öğrencinin paket süresi bu ders tarihinden önce doluyor. Lütfen paketi yenileyin.'
-          };
-        }
-      }
-
-      const currentParticipants = lessonData.participants ? lessonData.participants.length : 0;
-      
-      // Check if lesson is full
-      if (currentParticipants >= lessonData.maxParticipants) {
-        return {
-          success: false,
-          message: 'Ders dolu. Maksimum katılımcı sayısına ulaşıldı.'
-        };
-      }
-      
-      // Check if user is already registered
-      if (lessonData.participants && lessonData.participants.includes(userId)) {
-        return {
-          success: false,
-          message: 'Öğrenci zaten bu derse kayıtlı.'
-        };
-      }
-      
-      // Get lesson date for package deduction
-      let lessonDateForDeduction = lessonData.scheduledDate;
-      if (typeof lessonDateForDeduction === 'object' && lessonDateForDeduction.toDate) {
-        lessonDateForDeduction = lessonDateForDeduction.toDate().toISOString();
-      }
-
-      // Deduct lesson from the appropriate package using multi-package system
-      const { adminService } = await import('./adminService');
-      const deductResult = await adminService.deductLessonFromPackage(
+      const result = await joinLessonAtomically({
+        lessonId,
         userId,
-        lessonDateForDeduction,
-        `Admin ekledi: ${lessonData.title} - ${lessonData.scheduledDate}`
-      );
+        lessonInfo: (lessonData) => `Admin ekledi: ${lessonData.title} - ${lessonData.scheduledDate}`,
+        validateUser: (userData, lessonData) => {
+          if (userData.status === 'deleted' || userData.status === 'permanently_deleted') {
+            throw new BookingError('accountDeleted', 'Bu öğrenci silinmiş. Silinen üyeler derse eklenemez.');
+          }
+          if (userData.status === 'cancelled' || userData.membershipStatus === 'cancelled') {
+            throw new BookingError('membershipCancelled', 'Bu öğrencinin üyeliği iptal edilmiş. İptal edilen üyeler derse eklenemez.');
+          }
+          if (userData.membershipStatus === 'frozen' || userData.status === 'frozen') {
+            throw new BookingError('membershipFrozen', 'Bu öğrencinin üyeliği dondurulmuş. Dondurulmuş üyeler derse eklenemez.');
+          }
 
-      if (!deductResult.success) {
-        return {
-          success: false,
-          message: deductResult.error || 'Ders kredisi düşülürken bir hata oluştu.'
-        };
-      }
-      
-      // Add user to participants
-      await updateDoc(lessonRef, {
-        participants: arrayUnion(userId),
-        updatedAt: serverTimestamp(),
-        updatedBy: adminId
+          // Package expiry vs lesson date. packages[] is the source of truth;
+          // the cached packageExpiryDate is only a fallback for legacy members.
+          let effectiveExpiry = null;
+          if (Array.isArray(userData.packages) && userData.packages.length > 0) {
+            effectiveExpiry = userData.packages.reduce((latest, pkg) => {
+              if (pkg.status === 'cancelled' || !pkg.expiryDate) return latest;
+              const exp = normalizeDateValue(pkg.expiryDate);
+              if (!exp) return latest;
+              return (!latest || exp > latest) ? exp : latest;
+            }, null);
+          }
+          if (!effectiveExpiry) {
+            const fallbackExpiry = userData.packageExpiryDate || userData.packageInfo?.expiryDate;
+            effectiveExpiry = fallbackExpiry ? normalizeDateValue(fallbackExpiry) : null;
+          }
+
+          const lessonDate = normalizeDateToMidnight(lessonData.scheduledDate);
+          if (effectiveExpiry && lessonDate) {
+            const expiryEndOfDay = new Date(effectiveExpiry);
+            expiryEndOfDay.setHours(23, 59, 59, 999);
+            if (lessonDate > expiryEndOfDay) {
+              throw new BookingError('packageExpiredForLesson', 'Öğrencinin paket süresi bu ders tarihinden önce doluyor. Lütfen paketi yenileyin.');
+            }
+          }
+        },
+        lessonExtra: { updatedAt: serverTimestamp(), updatedBy: adminId },
+        userExtra: { updatedAt: new Date().toISOString() },
       });
 
-      // Create booking history record
+      const { lessonData, plan } = result;
+
       try {
         await bookingHistoryService.createBookingHistory(userId, lessonId, {
           ...lessonData,
@@ -2165,17 +2117,27 @@ const adminLessonService = {
       } catch (historyError) {
         console.warn('⚠️ Could not create booking history:', historyError);
       }
-      
-      // Clear user lessons cache after admin adds student
+
       clearUserLessonsCache(userId);
-      
+      const lessonDate = normalizeDateValue(lessonData.scheduledDate);
+      if (lessonDate) {
+        invalidateDateCache(formatDateToLocalKey(lessonDate));
+      }
+
       return {
         success: true,
-        message: `Öğrenci derse başarıyla eklendi. (${deductResult.packageName || 'Paket'} - Kalan: ${deductResult.totalRemaining})`,
-        remainingCredits: deductResult.totalRemaining,
-        deductedFromPackage: deductResult.packageName
+        message: `Öğrenci derse başarıyla eklendi. (${plan.packageName || 'Paket'} - Kalan: ${plan.totalRemaining})`,
+        remainingCredits: plan.totalRemaining,
+        deductedFromPackage: plan.packageName
       };
     } catch (error) {
+      if (isBookingError(error)) {
+        return {
+          success: false,
+          code: error.code,
+          message: adminBookingErrorMessage(error)
+        };
+      }
       console.error('Error adding student to lesson:', error);
       return {
         success: false,
@@ -2188,55 +2150,20 @@ const adminLessonService = {
   // Remove student from lesson (admin/instructor only)
   removeStudentFromLesson: async (lessonId, userId, adminId) => {
     try {
-      const lessonRef = doc(db, 'lessons', lessonId);
-      const lessonDoc = await getDoc(lessonRef);
-      
-      if (!lessonDoc.exists()) {
-        return {
-          success: false,
-          message: 'Ders bulunamadı.'
-        };
-      }
-      
-      const lessonData = lessonDoc.data();
-
-      // Admin can remove students from past lessons for record-keeping purposes
-
-      // Check if user is registered
-      if (!lessonData.participants || !lessonData.participants.includes(userId)) {
-        return {
-          success: false,
-          message: 'Öğrenci bu derse kayıtlı değil.'
-        };
-      }
-      
-      // Get lesson date for package refund
-      let lessonDateForRefund = lessonData.scheduledDate;
-      if (typeof lessonDateForRefund === 'object' && lessonDateForRefund.toDate) {
-        lessonDateForRefund = lessonDateForRefund.toDate().toISOString();
-      }
-
-      // Refund credit to the appropriate package using multi-package system
-      const { adminService } = await import('./adminService');
-      const refundResult = await adminService.refundLessonToPackage(
+      // Admins may remove students from past lessons for record keeping, so
+      // there is no time rule here. Seat removal and the credit refund happen
+      // in one transaction; a missing user document only skips the refund.
+      const result = await leaveLessonAtomically({
+        lessonId,
         userId,
-        lessonDateForRefund,
-        `Admin çıkardı: ${lessonData.title} - ${lessonData.scheduledDate}`
-      );
-
-      if (!refundResult.success) {
-        console.warn('⚠️ Credit refund failed:', refundResult.error);
-        // Continue with removal even if refund fails
-      }
-      
-      // Remove user from participants
-      await updateDoc(lessonRef, {
-        participants: arrayRemove(userId),
-        updatedAt: serverTimestamp(),
-        updatedBy: adminId
+        lessonInfo: (lessonData) => `Admin çıkardı: ${lessonData.title} - ${lessonData.scheduledDate}`,
+        allowMissingUser: true,
+        lessonExtra: { updatedAt: serverTimestamp(), updatedBy: adminId },
+        userExtra: { updatedAt: new Date().toISOString() },
       });
 
-      // Update booking history
+      const { lessonData, plan } = result;
+
       try {
         await bookingHistoryService.createBookingHistory(userId, lessonId, {
           ...lessonData,
@@ -2245,25 +2172,28 @@ const adminLessonService = {
       } catch (historyError) {
         console.warn('⚠️ Could not create booking history:', historyError);
       }
-      
-      // Clear user lessons cache after admin removes student
+
       clearUserLessonsCache(userId);
-      
-      // Invalidate the per-date cache for this lesson's date so UI updates immediately
       const lessonDate = normalizeDateValue(lessonData.scheduledDate);
       if (lessonDate) {
-        const dateKey = formatDateToLocalKey(lessonDate);
-        invalidateDateCache(dateKey);
+        invalidateDateCache(formatDateToLocalKey(lessonDate));
       }
-      
+
       return {
         success: true,
-        message: refundResult.success 
-          ? `Öğrenci dersten çıkarıldı. (${refundResult.packageName || 'Paket'} - Kalan: ${refundResult.totalRemaining})`
+        message: plan
+          ? `Öğrenci dersten çıkarıldı. (${plan.packageName || 'Paket'} - Kalan: ${plan.totalRemaining})`
           : 'Öğrenci dersten çıkarıldı. (Kredi iadesi yapılamadı)',
-        remainingCredits: refundResult.totalRemaining
+        remainingCredits: plan ? plan.totalRemaining : undefined
       };
     } catch (error) {
+      if (isBookingError(error)) {
+        return {
+          success: false,
+          code: error.code,
+          message: adminBookingErrorMessage(error)
+        };
+      }
       console.error('Error removing student from lesson:', error);
       return {
         success: false,

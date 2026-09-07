@@ -317,6 +317,8 @@ export default {
     // Booking Process
     tooLateTitle: 'Rezervasyon Çok Geç',
     tooLateMessage: 'Bu ders başlamadan 2 saat öncesine kadar rezerve edilebilir.',
+    tooLateToBook: 'Bu ders başlamadan 2 saat öncesine kadar rezerve edilebilir.',
+    offlineNotice: 'Bağlantı yok. Gösterilen doluluk bilgisi güncel olmayabilir.',
     bookingConfirmTitle: 'Ders Rezervasyonu',
     bookingConfirmMessage: 'dersini rezerve etmek istediğinizden emin misiniz?',
     bookingSuccess: 'Başarılı! 🎉',
@@ -460,6 +462,9 @@ export default {
     insufficientCredits: 'Yetersiz ders kredisi. Lütfen ders paketi satın alın.',
     accountDeleted: 'Hesabınız silinmiş. Ders rezervasyonu yapamazsınız.',
     packageExpiredForLesson: 'Paketinizin süresi bu ders tarihinden önce doluyor. Lütfen paketinizi yenileyin.',
+    noPackageForDate: 'Bu ders tarihi için geçerli bir paketiniz bulunmuyor. Lütfen bu tarihi kapsayan bir paket satın alın.',
+    lessonFull: 'Ders dolu. Bu derse rezervasyon yapılamıyor.',
+    alreadyBooked: 'Bu derse zaten kayıtlısınız.',
   },
   
   // Class History

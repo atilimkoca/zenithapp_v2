@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useIsFocused } from '@react-navigation/native';
 import { colors } from '../constants/colors';
 import { lessonService, getCategoryInfo } from '../services/lessonService';
 import { userLessonService } from '../services/userLessonService';
@@ -260,6 +261,8 @@ const LessonCard = React.memo(({ lesson, userId, onBook, onCancel, t }) => {
 
 export default function ClassSelectionScreen() {
   const { user, userData } = useAuth();
+  const isFocused = useIsFocused();
+  const [isOffline, setIsOffline] = useState(false);
   const { t, language: currentLanguage } = useI18n();
 
   // Available dates (lightweight)
@@ -355,6 +358,32 @@ export default function ClassSelectionScreen() {
       setLoadingLessons(false);
     }
   }, [formatDisplayDate]);
+
+  // Live updates for the selected day while this tab is focused. Firestore
+  // pushes only changed documents, so occupancy and the "Rezerve Edildi" badge
+  // follow the server in real time and nothing is re-fetched on focus. The
+  // cached list painted by loadLessonsForDate stays visible until the first
+  // snapshot arrives. fromCache=true means the device is offline; we keep
+  // showing the last known state and flag it.
+  useEffect(() => {
+    if (!isFocused || loading || !selectedDateKey) return undefined;
+
+    const unsubscribe = lessonService.subscribeToLessonsForDate(
+      selectedDateKey,
+      (lessons, meta) => {
+        setCurrentDayLessons(lessons.map((lesson) => ({
+          ...lesson,
+          formattedDate: formatDisplayDate(lesson.scheduledDate),
+        })));
+        setLoadingLessons(false);
+        setIsOffline(Boolean(meta && meta.fromCache));
+        loadedDatesRef.current.add(selectedDateKey);
+      },
+      () => setIsOffline(true)
+    );
+
+    return unsubscribe;
+  }, [isFocused, loading, selectedDateKey, formatDisplayDate]);
 
   // Initial load - FAST: single optimized fetch
   useEffect(() => {
@@ -830,6 +859,15 @@ export default function ClassSelectionScreen() {
               </View>
             </View>
 
+            {isOffline && (
+              <View style={styles.offlineNotice}>
+                <Ionicons name="cloud-offline-outline" size={16} color={colors.warning} />
+                <Text style={styles.offlineNoticeText}>
+                  {t('classSelection.offlineNotice') || 'Bağlantı yok. Gösterilen doluluk bilgisi güncel olmayabilir.'}
+                </Text>
+              </View>
+            )}
+
             {loadingLessons ? (
               <View style={styles.loadingLessonsContainer}>
                 <ActivityIndicator size="small" color={colors.primary} />
@@ -988,6 +1026,21 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 16,
     fontWeight: '500',
+  },
+  offlineNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: colors.warning + '14',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  offlineNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textSecondary,
   },
   loadingLessonsContainer: {
     padding: 24,

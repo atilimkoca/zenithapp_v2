@@ -106,14 +106,14 @@ export default ({ config }) => ({
       "expo-build-properties",
       {
         ios: {
-          deploymentTarget: "15.1"
+          deploymentTarget: "16.4"
         }
       }
     ],
     [
       "./plugins/with-ios-pods-deployment-target",
       {
-        deploymentTarget: "15.1"
+        deploymentTarget: "16.4"
       }
     ]
   ],

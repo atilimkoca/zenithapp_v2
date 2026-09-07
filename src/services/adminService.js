@@ -1,4 +1,6 @@
-import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, orderBy, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, query, where, getDocs, orderBy, runTransaction } from 'firebase/firestore';
+import * as packageMath from './packageMath';
+import { buildDeletionPayload } from './memberDeletion';
 import { db } from '../config/firebase';
 
 // Admin service for managing user approvals
@@ -414,27 +416,48 @@ export const adminService = {
   },
 
   // Delete user completely (from Firestore only - Firebase Auth deletion must be done from admin backend)
+  // Soft delete, matching the web panel: the user document stays in Firestore,
+  // marked deleted with login disabled, so the record can be audited and
+  // restored. Nothing is destroyed and no Firebase Auth account is removed.
   deleteUser: async (userId, adminId) => {
     try {
-      const userRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userRef);
-      
-      if (!userDoc.exists()) {
+      let deletedByName = null;
+      if (adminId) {
+        const adminSnap = await getDoc(doc(db, 'users', adminId));
+        if (adminSnap.exists()) {
+          const a = adminSnap.data();
+          deletedByName = `${a.firstName || ''} ${a.lastName || ''}`.trim() || a.displayName || a.email || null;
+        }
+      }
+
+      const outcome = await runTransaction(db, async (tx) => {
+        const userRef = doc(db, 'users', userId);
+        const userDoc = await tx.get(userRef);
+        if (!userDoc.exists()) {
+          return { notFound: true };
+        }
+        tx.update(userRef, {
+          ...buildDeletionPayload({
+            memberData: userDoc.data(),
+            deletedBy: adminId,
+            deletedByName,
+            deletedFrom: 'mobile',
+          }),
+          updatedAt: new Date().toISOString(),
+        });
+        return { done: true };
+      });
+
+      if (outcome.notFound) {
         return {
           success: false,
           message: 'Kullanıcı bulunamadı.'
         };
       }
 
-      // Delete from Firestore
-      await deleteDoc(userRef);
-      
-      // Note: Firebase Auth user deletion must be done from admin panel backend
-      // using Firebase Admin SDK, not from client-side
-      
       return {
         success: true,
-        message: 'Kullanıcı başarıyla silindi. (Firebase Auth silme işlemi admin panelinden yapılmalıdır.)'
+        message: 'Üye silindi. Kaydı saklandı ve girişi engellendi; gerekirse geri alınabilir.'
       };
     } catch (error) {
       console.error('Error deleting user:', error);
@@ -1091,36 +1114,10 @@ export const adminService = {
         return { success: false, error: 'Kullanıcı bulunamadı' };
       }
 
-      const userData = userDoc.data();
-      let packages = userData.packages || [];
-
-      // Migrate legacy packageInfo if packages array is empty
-      if (packages.length === 0 && userData.packageInfo) {
-        const legacyPackage = adminService.migrateLegacyPackage(userData);
-        if (legacyPackage) {
-          packages = [legacyPackage];
-        }
-      }
-
-      // Update package statuses based on current date
-      const now = new Date();
-      packages = packages.map(pkg => {
-        const expiryDate = new Date(pkg.expiryDate);
-        const startDate = new Date(pkg.startDate);
-
-        let status = pkg.status;
-        if (expiryDate < now) {
-          status = 'expired';
-        } else if (startDate > now) {
-          status = 'upcoming';
-        } else if (pkg.remainingLessons <= 0) {
-          status = 'depleted';
-        } else {
-          status = 'active';
-        }
-
-        return { ...pkg, status };
-      });
+      // Shared pure logic (packageMath): migrates legacy packageInfo when the
+      // packages array is empty and recomputes statuses for today. A package
+      // marked 'cancelled' stays cancelled.
+      const packages = packageMath.resolvePackages(userDoc.data(), { now: new Date() });
 
       return {
         success: true,
@@ -1136,21 +1133,7 @@ export const adminService = {
   /**
    * Get packages that cover a specific date
    */
-  getPackagesForDate: (packages, targetDate) => {
-    const date = new Date(targetDate);
-    date.setHours(12, 0, 0, 0);
-
-    return packages.filter(pkg => {
-      const startDate = new Date(pkg.startDate);
-      startDate.setHours(0, 0, 0, 0);
-      const expiryDate = new Date(pkg.expiryDate);
-      expiryDate.setHours(23, 59, 59, 999);
-
-      return startDate <= date && expiryDate >= date &&
-             pkg.status !== 'cancelled' &&
-             pkg.remainingLessons > 0;
-    });
-  },
+  getPackagesForDate: (packages, targetDate) => packageMath.getPackagesForDate(packages, targetDate),
 
   /**
    * Check if user can book a lesson on a specific date
@@ -1197,112 +1180,58 @@ export const adminService = {
    */
   deductLessonFromPackage: async (userId, lessonDate, lessonInfo = '') => {
     try {
-      // First, get the user data directly to check for legacy structure
-      const userRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userRef);
+      // Read → compute → write inside ONE transaction so a concurrent change to
+      // the member's packages can never be overwritten with a stale copy.
+      const outcome = await runTransaction(db, async (tx) => {
+        const userRef = doc(db, 'users', userId);
+        const userDoc = await tx.get(userRef);
+        if (!userDoc.exists()) {
+          return { notFound: true };
+        }
 
-      if (!userDoc.exists()) {
+        const plan = packageMath.planDeduction(userDoc.data(), lessonDate, lessonInfo, {
+          now: new Date(),
+          excludeExpired: true
+        });
+        if (!plan.ok) {
+          return { plan };
+        }
+
+        tx.update(userRef, {
+          ...plan.updateData,
+          updatedAt: new Date().toISOString()
+        });
+        return { plan };
+      });
+
+      if (outcome.notFound) {
         return { success: false, error: 'Kullanıcı bulunamadı' };
       }
 
-      const userData = userDoc.data();
-      
-      // Check if user has packages array or packageInfo
-      const hasPackages = userData.packages && Array.isArray(userData.packages) && userData.packages.length > 0;
-      const hasPackageInfo = userData.packageInfo && Object.keys(userData.packageInfo).length > 0;
-      
-      // If no packages array and no packageInfo, use legacy deduction
-      if (!hasPackages && !hasPackageInfo) {
-        const currentCredits = userData.remainingClasses || userData.lessonCredits || 0;
-        if (currentCredits <= 0) {
-          return { success: false, error: 'Kalan ders hakkı yok' };
-        }
-        console.log('⚠️ No packages, using legacy deduction. Current:', currentCredits, 'New:', currentCredits - 1);
-        await updateDoc(userRef, {
-          remainingClasses: currentCredits - 1,
-          lessonCredits: currentCredits - 1,
-          updatedAt: new Date().toISOString()
-        });
+      const { plan } = outcome;
+      if (!plan.ok) {
+        return {
+          success: false,
+          error: plan.message,
+          ...(plan.noPackageForDate ? { noPackageForDate: true } : {})
+        };
+      }
+
+      if (plan.usedLegacyDeduction) {
         return {
           success: true,
           message: 'Ders düşüldü (legacy)',
           usedLegacyDeduction: true,
-          totalRemaining: currentCredits - 1
+          totalRemaining: plan.totalRemaining
         };
       }
-      
-      // User has packages - use normal flow
-      const packagesResult = await adminService.getUserPackages(userId);
-      if (!packagesResult.success) {
-        return { success: false, error: packagesResult.error };
-      }
-
-      const eligiblePackages = adminService.getPackagesForDate(packagesResult.packages, lessonDate);
-
-      if (eligiblePackages.length === 0) {
-        return {
-          success: false,
-          error: 'Bu tarih için geçerli bir paket bulunamadı',
-          noPackageForDate: true
-        };
-      }
-
-      // Use the first eligible package
-      const targetPackage = eligiblePackages[0];
-
-      if (targetPackage.remainingLessons <= 0) {
-        return { success: false, error: 'Pakette kalan ders yok' };
-      }
-
-      // FIXED: Use packagesResult.packages (which includes migrated legacy packages)
-      // instead of userData.packages which may be empty for legacy users.
-      // Previously, if packages[] was empty but packageInfo existed, getUserPackages()
-      // created a virtual legacy package in memory, but then we mapped over the
-      // empty userData.packages array — resulting in totalRemainingClasses = 0.
-      const packages = packagesResult.packages;
-
-      // Update the specific package
-      const updatedPackages = packages.map(pkg => {
-        if (pkg.id === targetPackage.id) {
-          return {
-            ...pkg,
-            remainingLessons: pkg.remainingLessons - 1,
-            lastUsedAt: new Date().toISOString(),
-            lastUsedFor: lessonInfo
-          };
-        }
-        return pkg;
-      });
-
-      // Calculate new total remaining from ALL non-cancelled, non-expired packages
-      const calcNow4 = new Date();
-      const totalRemainingClasses = updatedPackages.reduce((sum, pkg) => {
-        if (pkg.status === 'cancelled') return sum;
-        if (pkg.expiryDate && new Date(pkg.expiryDate) < calcNow4) return sum;
-        return sum + (pkg.remainingLessons || 0);
-      }, 0);
-
-      // Build update data including packageInfo sync
-      const updateData = {
-        packages: updatedPackages,
-        remainingClasses: totalRemainingClasses,
-        lessonCredits: totalRemainingClasses,
-        updatedAt: new Date().toISOString()
-      };
-
-      // Also update packageInfo.remainingClasses if it exists
-      if (userData.packageInfo) {
-        updateData['packageInfo.remainingClasses'] = totalRemainingClasses;
-      }
-
-      await updateDoc(userRef, updateData);
 
       return {
         success: true,
-        deductedFromPackage: targetPackage.id,
-        packageName: targetPackage.packageName,
-        remainingInPackage: targetPackage.remainingLessons - 1,
-        totalRemaining: totalRemainingClasses
+        deductedFromPackage: plan.packageId,
+        packageName: plan.packageName,
+        remainingInPackage: plan.remainingInPackage,
+        totalRemaining: plan.totalRemaining
       };
     } catch (error) {
       console.error('❌ Error deducting lesson from package:', error);
@@ -1315,116 +1244,45 @@ export const adminService = {
    */
   refundLessonToPackage: async (userId, lessonDate, lessonInfo = '') => {
     try {
-      const userRef = doc(db, 'users', userId);
-      const userDoc = await getDoc(userRef);
+      const outcome = await runTransaction(db, async (tx) => {
+        const userRef = doc(db, 'users', userId);
+        const userDoc = await tx.get(userRef);
+        if (!userDoc.exists()) {
+          return { notFound: true };
+        }
 
-      if (!userDoc.exists()) {
+        const plan = packageMath.planRefund(userDoc.data(), lessonDate, lessonInfo, {
+          now: new Date(),
+          excludeExpired: true
+        });
+
+        tx.update(userRef, {
+          ...plan.updateData,
+          updatedAt: new Date().toISOString()
+        });
+        return { plan };
+      });
+
+      if (outcome.notFound) {
         return { success: false, error: 'Kullanıcı bulunamadı' };
       }
 
-      const userData = userDoc.data();
-      let packages = userData.packages || [];
-
-      // If no packages array, try to use legacy packageInfo
-      if (packages.length === 0 && userData.packageInfo) {
-        const legacyPackage = adminService.migrateLegacyPackage(userData);
-        if (legacyPackage) {
-          packages = [legacyPackage];
-        }
-      }
-
-      if (packages.length === 0) {
-        // Fallback: just increment the legacy fields
-        await updateDoc(userRef, {
-          remainingClasses: increment(1),
-          lessonCredits: increment(1),
-          updatedAt: new Date().toISOString()
-        });
+      const { plan } = outcome;
+      if (plan.usedLegacyRefund) {
         return {
           success: true,
           message: 'Ders kredisi iade edildi (legacy)',
-          usedLegacyRefund: true
+          usedLegacyRefund: true,
+          totalRemaining: plan.totalRemaining
         };
       }
 
-      // Find the package that covers the lesson date
-      const date = new Date(lessonDate);
-      date.setHours(12, 0, 0, 0);
-
-      let targetPackage = packages.find(pkg => {
-        const startDate = new Date(pkg.startDate);
-        startDate.setHours(0, 0, 0, 0);
-        const expiryDate = new Date(pkg.expiryDate);
-        expiryDate.setHours(23, 59, 59, 999);
-
-        return startDate <= date && expiryDate >= date && pkg.status !== 'cancelled';
-      });
-
-      // If no package covers the date, use the most recent active package
-      if (!targetPackage) {
-        const now = new Date();
-        const activePackages = packages.filter(pkg => {
-          const expiryDate = new Date(pkg.expiryDate);
-          return expiryDate >= now && pkg.status !== 'cancelled';
-        });
-
-        if (activePackages.length > 0) {
-          // Sort by start date descending and pick the most recent
-          activePackages.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
-          targetPackage = activePackages[0];
-        } else {
-          // Fallback to any package if all are expired
-          targetPackage = packages[packages.length - 1];
-        }
-      }
-
-      // Update the specific package
-      const updatedPackages = packages.map(pkg => {
-        if (pkg.id === targetPackage.id) {
-          const newRemaining = (pkg.remainingLessons || 0) + 1;
-          // Don't exceed total lessons
-          const maxLessons = pkg.totalLessons || newRemaining;
-          return {
-            ...pkg,
-            remainingLessons: Math.min(newRemaining, maxLessons),
-            lastRefundAt: new Date().toISOString(),
-            lastRefundFor: lessonInfo
-          };
-        }
-        return pkg;
-      });
-
-      // Calculate new total remaining from ALL non-cancelled, non-expired packages
-      const calcNow5 = new Date();
-      const totalRemainingClasses = updatedPackages.reduce((sum, pkg) => {
-        if (pkg.status === 'cancelled') return sum;
-        if (pkg.expiryDate && new Date(pkg.expiryDate) < calcNow5) return sum;
-        return sum + (pkg.remainingLessons || 0);
-      }, 0);
-
-      // Build update data including packageInfo sync
-      const updateData = {
-        packages: updatedPackages,
-        remainingClasses: totalRemainingClasses,
-        lessonCredits: totalRemainingClasses,
-        updatedAt: new Date().toISOString()
-      };
-
-      // Also update packageInfo.remainingClasses if it exists
-      if (userData.packageInfo) {
-        updateData['packageInfo.remainingClasses'] = totalRemainingClasses;
-      }
-
-      await updateDoc(userRef, updateData);
-
-      const refundedPackage = updatedPackages.find(p => p.id === targetPackage.id);
-
       return {
         success: true,
-        refundedToPackage: targetPackage.id,
-        packageName: targetPackage.packageName,
-        remainingInPackage: refundedPackage?.remainingLessons || 0,
-        totalRemaining: totalRemainingClasses,
+        refundedToPackage: plan.packageId,
+        packageName: plan.packageName,
+        remainingInPackage: plan.remainingInPackage,
+        totalRemaining: plan.totalRemaining,
         message: 'Ders kredisi pakete iade edildi'
       };
     } catch (error) {
@@ -1436,47 +1294,7 @@ export const adminService = {
   /**
    * Migrate legacy single packageInfo to packages array format
    */
-  migrateLegacyPackage: (userData) => {
-    if (!userData.packageInfo && !userData.packageExpiryDate) {
-      return null;
-    }
-
-    const packageInfo = userData.packageInfo || {};
-
-    // FIXED: Check packageInfo.remainingClasses first, then root level values
-    const remainingClasses = packageInfo.remainingClasses !== undefined
-      ? packageInfo.remainingClasses
-      : (userData.remainingClasses || userData.lessonCredits || 0);
-
-    if (remainingClasses <= 0 && !userData.packageExpiryDate) {
-      return null;
-    }
-
-    // Get totalLessons - FIXED: check root-level totalLessons/totalClasses BEFORE packageInfo.lessonCount
-    // because lessonCount may have been incorrectly set to remaining by migration
-    const totalLessons = userData.totalLessons ||
-                         userData.totalClasses ||
-                         packageInfo.totalLessons || 
-                         packageInfo.lessonCount || 
-                         packageInfo.classes || 
-                         packageInfo.sessions ||
-                         remainingClasses; // Only fallback to remaining if nothing else available
-
-    return {
-      id: packageInfo.packageId || `legacy_${Date.now()}`,
-      packageId: packageInfo.packageId || null,
-      packageName: packageInfo.packageName || userData.packageName || 'Mevcut Paket',
-      packageType: packageInfo.packageType || userData.packageType || 'group',
-      startDate: userData.packageStartDate || packageInfo.assignedAt || userData.approvedAt || new Date().toISOString(),
-      expiryDate: userData.packageExpiryDate || packageInfo.expiryDate || new Date().toISOString(),
-      totalLessons: totalLessons,
-      remainingLessons: remainingClasses,
-      assignedAt: packageInfo.assignedAt || userData.approvedAt || new Date().toISOString(),
-      assignedBy: userData.approvedBy || 'system_migration',
-      status: 'active',
-      isLegacy: true
-    };
-  },
+  migrateLegacyPackage: (userData) => packageMath.migrateLegacyPackage(userData),
 
   /**
    * Get visible date ranges for user (union of all package date ranges)
